@@ -99,15 +99,34 @@ def listing_html(it, card, a):
             f'<td>{money(r["value"])}</td><td class="muted">{e(r["source"])}</td></tr>'
             for r in a["rows"])
         if a["unnamed"]:
-            rows += (f'<tr><td class="muted">+ {a["unnamed"]} cards not named</td>'
+            other = "other players' cards" if a.get("bulk") else "cards not named"
+            rows += (f'<tr><td class="muted">+ {a["unnamed"]} {other}</td>'
                      f'<td>{a["unnamed"]}</td><td>$0.00</td><td class="muted">counted as $0</td></tr>')
+        table = (f'<table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th>'
+                 f'<th>Source</th></tr>{rows}</table>')
+
+    if a["kind"] == "lot" and a.get("bulk"):
+        # Cheap 1st/RC lot: judged on price per card, not on singles value.
+        stats = f"""
+      <dl class="stats">{price_cells}
+        <div><dt>Cards</dt><dd>{a["count"]}</dd></div>
+        <div><dt>Per card</dt><dd class="good">{money(a["per_card"])}</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>{money(a["singles"])}</dd></div>
+      </dl>{ship_warn}
+      <p class="names">Prospects named: {e(", ".join(a["players"]))}</p>
+      {table}
+      <p class="names muted">Read from the {e(a["source"])}{"" if a["looked_up"] else " (full description not checked yet)"}.
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>"""
+        badge = (f'<span class="badge good">{e(" + ".join(a["tags"]))} lot · '
+                 f'{money(a["per_card"])}/card · score {a["score"]}</span>')
+    elif a["kind"] == "lot":
         profit_class = "good" if a["profit"] >= 0 else ""
         stats = f"""
       <dl class="stats">{price_cells}
         <div><dt>Singles value</dt><dd>{money(a["singles"])}</dd></div>
         <div><dt>Est. profit (sell singles)</dt><dd class="{profit_class}">{money(a["profit"])}</dd></div>
       </dl>{ship_warn}
-      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr>{rows}</table>
+      {table}
       <p class="names muted">Cards read from the {e(a["source"])}{"" if a["looked_up"] else " (full description not checked yet)"}.
       Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
       Check the photos: the cards may be a cheaper version than described.</p>"""
@@ -198,7 +217,8 @@ def build(path, found, updated, listings, comps, demo=False):
     deals = [x for x in found if x[2]["kind"] == "deal"]
     recs = [x for x in found if x[2]["kind"] == "rec"]
     cheap = [x for x in found if x[2]["kind"] == "cheap"]
-    lots = [x for x in found if x[2]["kind"] == "lot"]
+    bulk = [x for x in found if x[2]["kind"] == "lot" and x[2].get("bulk")]
+    lots = [x for x in found if x[2]["kind"] == "lot" and not x[2].get("bulk")]
 
     def section(title, items, empty_msg, intro=""):
         body = "".join(listing_html(*x) for x in items) or f'<p class="empty">{empty_msg}</p>'
@@ -227,7 +247,8 @@ def build(path, found, updated, listings, comps, demo=False):
       <span><b>{len(deals)}</b> deals</span>
       <span><b>{len(recs)}</b> recommended</span>
       <span><b>{len(cheap)}</b> cheap 1sts &amp; rookies</span>
-      <span><b>{len(lots)}</b> lots</span>
+      <span><b>{len(bulk)}</b> cheap 1st/RC lots</span>
+      <span><b>{len(lots)}</b> lots vs. singles</span>
     </div>
   </header>
   {demo_note}
@@ -245,6 +266,12 @@ def build(path, found, updated, listings, comps, demo=False):
                  "then rookies; each group is ranked by prospect rank and card type. Not checked against comps: these are cheap "
                  "cards to look at or hold, not quick flips. One listing per card: the cheapest. "
                  "Sellers often call prospect cards \"RC\" when they aren't official rookie cards.")}
+  {section("Cheap 1st &amp; RC lots (about $1 a card)", bulk,
+           "No cheap 1st/RC lots right now.",
+           intro="Lots that cost about $1 or less per card (price + shipping), name at least "
+                 "one of your prospects (the other cards can be anyone), and mention 1st or RC "
+                 "cards. Ranked by 1sts first, then RCs, then how many prospects and how highly "
+                 "ranked. No phone alerts.")}
   {section("Lots vs. singles", lots, "No lots priced well under their singles right now.",
            intro="Each card in the lot is priced like a single (sold comps first, then asking "
                  "prices), using the seller's description. Shown when the lot costs 30%+ less "

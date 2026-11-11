@@ -39,7 +39,7 @@ def in_quiet_hours(cfg):
     return (h >= s or h < e) if s > e else (s <= h < e)
 
 
-def evaluate(it, card, store, cfg, parser):
+def evaluate(it, card, store, cfg, parser, ranks):
     """Return a dict describing the deal if this listing looks underpriced, else None."""
     d = cfg["deal"]
     total = it["price"] + it["shipping"]
@@ -50,13 +50,18 @@ def evaluate(it, card, store, cfg, parser):
         return None
 
     if card.is_lot:
-        # Value the lot card by card (lots.py). Returns None unless it's priced at
-        # least 30% under the sum of its singles.
+        # Two lot rules (lots.py):
+        #  1. worth 30%+ more as singles (alerts if reselling them makes $10+)
+        #  2. cheap bulk lot: ~$1 or less per card with 1st/RC cards (page only)
         if not cfg["lots"]["enabled"]:
             return None
         a = lots.evaluate_lot(it, card, store, cfg, parser)
+        if not (a and a["alert"]):
+            a = lots.bulk_lot(it, card, store, cfg, parser, ranks) or a
         if a:
             a["when"] = when(it, hours_left)
+            if a.get("bulk"):
+                return a                     # page only, no alert text needed
             top = ", ".join(f'{r["card"].player.title()} ${r["value"]:.0f}'
                             + (f' x{r["qty"]}' if r["qty"] > 1 else "") for r in a["rows"][:4])
             a["body"] = (f"{it['title']}\n{top}\n"
@@ -199,11 +204,21 @@ def search_groups(prospects, extra, per_search, max_len=100):
 
 def lookup_lots(candidates, store, cfg, get_details):
     """Fetch full details (description, players, card count, shipping) for lots we
-    haven't looked at yet - at most N per run, each lot only once. Lots naming the
-    most prospects go first, then the cheapest. Returns how many lookups were made."""
+    haven't looked at yet - at most N per run, each lot only once. Lots that look like
+    about $1 a card from the title go first, then those naming the most prospects,
+    then the cheapest. Returns how many lookups were made."""
     todo = [(it, card) for it, card in candidates.values()
             if card.is_lot and store.get_lot_details(it["item_id"]) is None]
-    todo.sort(key=lambda x: (-len(x[1].players_in_title), x[0]["price"] + x[0]["shipping"]))
+    max_per_card = cfg["lots"]["bulk"]["max_price_per_card"]
+
+    def priority(x):
+        it, card = x
+        total = it["price"] + it["shipping"]
+        count = lots.card_count(it["title"], None)
+        cheap_per_card = bool(count) and total / count <= max_per_card * 1.5
+        return (not cheap_per_card, -len(card.players_in_title), total)
+
+    todo.sort(key=priority)
     done = 0
     for it, card in todo[: cfg["lots"]["detail_lookups_per_run"]]:
         try:
@@ -229,7 +244,7 @@ def fill_shipping(candidates, store, cfg, ranks, parser, get_shipping):
         if it["shipping_known"] or card.is_lot:   # lots get shipping from lookup_lots
             continue
         # assumes free shipping for now; deals sort before recommended picks
-        a = evaluate(it, card, store, cfg, parser) or recommend(it, card, store, cfg, ranks)
+        a = evaluate(it, card, store, cfg, parser, ranks) or recommend(it, card, store, cfg, ranks)
         if a:
             maybe.append((a["profit"] or 0, it, card))
     maybe.sort(key=lambda x: -x[0])          # biggest possible profit first
@@ -342,9 +357,12 @@ def run(args):
     lookups = fill_shipping(candidates, store, cfg, ranks, parser, get_shipping)
 
     # ---- 3. Find deals and recommended picks (all of them go on the web page) ----
-    found, lot_watch, recs, cheap = [], [], [], {}
+    found, lot_watch, bulk_lots, recs, cheap = [], [], [], [], {}
     for it, card in candidates.values():
-        a = evaluate(it, card, store, cfg, parser)
+        a = evaluate(it, card, store, cfg, parser, ranks)
+        if a and a.get("bulk"):
+            bulk_lots.append((it, card, a))   # cheap 1st/RC lot: page only
+            continue
         if a and a["kind"] == "lot" and not a["alert"]:
             # under singles value, but no resale profit: page only (skip tiny bulk lots)
             if a["singles"] >= cfg["lots"]["min_watch_value"]:
@@ -364,6 +382,8 @@ def run(args):
     found.sort(key=lambda x: -(x[2]["profit"] or 0))   # biggest estimated profit first
     lot_watch.sort(key=lambda x: -x[2]["discount"])
     lot_watch = lot_watch[: cfg["lots"]["max_watch"]]
+    bulk_lots.sort(key=lambda x: (-x[2]["score"], x[2]["per_card"]))
+    bulk_lots = bulk_lots[: cfg["lots"]["bulk"]["max_items"]]
     recs.sort(key=lambda x: -x[2]["score"])
     recs = recs[: cfg["recommend"]["max_items"]]
     # every 1st Bowman before any other card; then highest score; if tied, cheapest
@@ -390,13 +410,14 @@ def run(args):
     page = "demo.html" if args.demo else "preview.html" if args.dry_run else "index.html"
     page_path = os.path.join(HERE, "docs", page)
     updated = datetime.now(ZoneInfo(cfg["alerts"]["timezone"])).strftime("%b %d, %Y %I:%M %p %Z")
-    webpage.build(page_path, found + lot_watch + recs + cheap, updated=updated, listings=len(candidates),
+    webpage.build(page_path, found + bulk_lots + lot_watch + recs + cheap, updated=updated, listings=len(candidates),
                   comps=store.comp_count(), demo=args.demo)
 
     print(f"\nsearches: {len(groups)} groups ({'auctions + Buy It Now' if do_bin else 'auctions only'})"
           f" | listings matched: {len(candidates)} | new comps: {new_comps} | "
           f"lot lookups: {lot_lookups} | shipping lookups: {lookups} | "
-          f"deals + lots: {len(found)} | lots (page only): {len(lot_watch)} | "
+          f"deals + lots: {len(found)} | cheap 1st/RC lots: {len(bulk_lots)} | "
+          f"lots (page only): {len(lot_watch)} | "
           f"recommended: {len(recs)} | "
           f"cheap 1sts/RCs: {len(cheap)} | "
           f"alerts sent: {sent}"

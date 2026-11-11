@@ -85,6 +85,9 @@ run replaces with one fresh commit, so the repo stays small and the bot never to
    prices for that exact card, else the player's base cards. Only 3 copies of a card count. A lot
    30%+ under its singles shows on the page; it alerts only if reselling the singles nets $10+
    (cards under $6 count $0 there). Check the photos: a lot may hold cheaper versions than described.
+   **Cheap 1st & RC lots (page only):** lots of 5+ cards at about $1 or less per card (price +
+   shipping), naming at least one of your prospects (the other cards can be anyone) and mentioning
+   1st or RC cards. Ranked 1sts first, then RCs, then by the prospects named. Settings: `lots.bulk`.
 5. **Recommended (web page only).** Before sold comps build up, the page also lists Buy It Now
    cards priced 25%+ under what other sellers ask for the exact same card (needs 3+ other
    listings), ranked by a desirability score: prospect rank, 1st, auto, numbered, color, grade 10.

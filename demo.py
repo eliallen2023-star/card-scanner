@@ -37,6 +37,9 @@ LIVE = [  # (title, type, price, shipping (None = not in search results), bids, 
     ("2025 Bowman Draft Chrome Eli Willits 1st #BDC-1", "FIXED_PRICE", 3.50, 1.00, 0, None),
     ("Eli Willits 2025 Bowman Draft Chrome 1st Bowman BDC-1", "FIXED_PRICE", 4.00, 1.00, 0, None),
     ("2025 Bowman Draft Chrome #BDC-1 Eli Willits 1st Nationals", "FIXED_PRICE", 4.50, 1.00, 0, None),
+    # #17: cheap bulk lot, $22 for 25 cards ($0.88 each) with prospect 1sts
+    #      -> "Cheap 1st & RC lots" section
+    ("2025 Bowman 1st Bowman RC Lot (25) Jesus Made Eli Willits + Base", "FIXED_PRICE", 18.00, 4.00, 0, None),
 ]
 
 # What item_details() would return for the demo lots (index into LIVE).
@@ -50,6 +53,11 @@ LOT_DETAILS = {
                   "2025 Bowman Draft Kade Anderson 1st"]},
     13: {"shipping": 4.00, "players": ["Eli Willits"], "count": 10,
          "lines": ["Lot of 10 Eli Willits Bowman Draft cards, all the same card."]},
+    17: {"shipping": 4.00, "players": ["Jesus Made", "Eli Willits"], "count": 25,
+         "lines": ["25 card lot, you get everything pictured:",
+                   "Jesus Made 2025 Bowman 1st Bowman BP-50",
+                   "Eli Willits 2025 Bowman Draft 1st RC BD-1",
+                   "plus 23 base cards of other players"]},
 }
 LOOKUP_SHIPPING = {5: 5.00,    # cheap shipping -> still a deal
                    6: 40.00}   # $40 shipping -> no longer a deal

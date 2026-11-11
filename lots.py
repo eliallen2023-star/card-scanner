@@ -23,7 +23,8 @@ def card_count(title, details):
     if details and details.get("count"):
         return details["count"]
     t = norm(title)
-    for pattern in (r"\blot of (\d{1,4})\b", r"\b(\d{1,4})\s?-?\s?(?:card|cards|ct)\b",
+    for pattern in (r"\blot of (\d{1,4})\b", r"\blot (\d{1,4})\b",   # "Lot (25)" reads as "lot 25"
+                    r"\b(\d{1,4})\s?-?\s?(?:card|cards|ct)\b",
                     r"\b(\d{1,4})\s?x\b|\bx\s?(\d{1,4})\b"):
         for m in re.finditer(pattern, t):
             n = int(next(g for g in m.groups() if g))
@@ -96,6 +97,68 @@ def single_value(card, store, cfg):
     return 0.0, "not enough data"
 
 
+def value_rows(cards, store, cfg):
+    """Value each distinct card once, then count copies. Only the first few copies
+    count: nobody buys 100 of the same common, so extra copies are worth ~$0.
+    Returns (rows, total singles value)."""
+    rows = {}
+    for c in cards:
+        if c.key not in rows:
+            value, src = single_value(c, store, cfg)
+            rows[c.key] = {"card": c, "qty": 0, "value": value, "source": src}
+        rows[c.key]["qty"] += 1
+    for r in rows.values():
+        r["valued"] = min(r["qty"], cfg["lots"]["max_copies_valued"])
+    rows = sorted(rows.values(), key=lambda r: -r["value"])
+    return rows, sum(r["value"] * r["valued"] for r in rows)
+
+
+FIRST = r"\b(1st|first)\b(?! edition)"      # "Bowman 1st Edition" is a product, not a 1st
+ROOKIE = r"\b(rc|rcs|rookie|rookies)\b"
+
+
+def bulk_lot(it, card, store, cfg, parser, ranks):
+    """A cheap bulk lot: about $1 or less per card, at least one of your prospects
+    named, and 1st or RC cards mentioned. The other cards can be any players.
+    Page only (no alerts). Returns a dict, or None."""
+    B = cfg["lots"]["bulk"]
+    if not B["enabled"]:
+        return None
+    details = store.get_lot_details(it["item_id"]) or {}
+    count = card_count(it["title"], details)
+    if not count or count < B["min_cards"]:
+        return None                       # can't work out a price per card
+    total = it["price"] + it["shipping"]
+    per_card = total / count
+    if per_card > B["max_price_per_card"]:
+        return None
+
+    cards, unnamed, source = cards_in_lot(it["title"], details, parser)
+    if not cards:
+        return None
+    text = norm(it["title"] + " " + " ".join(details.get("lines", [])))
+    has_first = any(c.first for c in cards) or bool(re.search(FIRST, text))
+    has_rc = any(c.rookie for c in cards) or bool(re.search(ROOKIE, text))
+    if not (has_first or has_rc):
+        return None
+
+    # Rank: 1sts matter most, then RCs; each named prospect adds points by rank
+    # (#1 = 50 ... #50 = 1); cheaper per card breaks ties.
+    players = sorted({c.player for c in cards}, key=lambda p: ranks.get(p, 50))
+    score = (30 if has_first else 0) + (15 if has_rc else 0) \
+        + sum(51 - ranks.get(p, 50) for p in players)
+    rows, singles = value_rows(cards, store, cfg)
+    tags = (["1st"] if has_first else []) + (["RC"] if has_rc else [])
+    return {"kind": "lot", "bulk": True, "alert": False,
+            "headline": f"LOT: {count} cards at ${per_card:.2f} each ({' + '.join(tags)})",
+            "count": count, "per_card": per_card, "tags": tags, "score": round(score),
+            "players": [f"#{ranks.get(p, '?')} {p.title()}" for p in players],
+            "rows": rows, "unnamed": max(0, count - sum(r["qty"] for r in rows)),
+            "source": source, "looked_up": bool(details),
+            "singles": singles, "total": total, "profit": None, "discount": None,
+            "median": None, "comps": 0}
+
+
 def evaluate_lot(it, card, store, cfg, parser):
     """Return a dict describing the lot if it's priced well under the sum of its
     singles, else None. "alert" says whether it also clears the profit rule."""
@@ -104,19 +167,7 @@ def evaluate_lot(it, card, store, cfg, parser):
     if not cards:
         return None
 
-    # Value each distinct card once, then count copies. Only the first few copies
-    # count: nobody buys 100 of the same common, so extra copies are worth ~$0.
-    rows = {}
-    for c in cards:
-        if c.key not in rows:
-            value, src = single_value(c, store, cfg)
-            rows[c.key] = {"card": c, "qty": 0, "value": value, "source": src}
-        rows[c.key]["qty"] += 1
-    for r in rows.values():
-        r["valued"] = min(r["qty"], L["max_copies_valued"])
-    rows = sorted(rows.values(), key=lambda r: -r["value"])
-
-    singles = sum(r["value"] * r["valued"] for r in rows)
+    rows, singles = value_rows(cards, store, cfg)
     total = it["price"] + it["shipping"]
     if singles <= 0:
         return None

@@ -37,7 +37,8 @@ def test_card_count_from_title():
     assert card_count("Leo De Vries 3-Card Lot 2026 Bowman Chrome", None) == 3
     assert card_count("Jesus Made Lot of (12) Bowman", None) == 12
     assert card_count("Jesus Made Bowman lot", None) is None
-    assert card_count("1993 Leaf Card Lot (2)", None) is None          # 1993 is a year
+    assert card_count("1993 Leaf Card Lot (2)", None) == 2             # 2 cards, not 1,993
+    assert card_count("Lot (25) Jesus Made 2025 Bowman", None) == 25
     assert card_count("X100 2026 Bowman Luis Pena Card Lot", None) == 100
 
 
@@ -45,6 +46,32 @@ def test_frank_thomas_is_not_thomas_white():
     p = Parser([{"name": "Thomas White"}], [])
     assert p.parse("Leaf Frank Thomas White Sox 1993 Card Lot") is None
     assert p.parse("2025 Bowman Chrome Thomas White 1st Marlins").player == "thomas white"
+
+
+def test_bulk_lot_rule():
+    import os, tempfile, yaml
+    from lots import bulk_lot
+    from store import Store
+    cfg = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+    s = Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+    ranks = {"jesus made": 1, "eli willits": 4}
+
+    def lot(title, price, ship=0.0, item_id="x"):
+        it = {"item_id": item_id, "title": title, "buying": "BIN", "price": price,
+              "shipping": ship, "shipping_known": True}
+        return bulk_lot(it, P.parse(title), s, cfg, P, ranks)
+
+    a = lot("2025 Bowman 1st Bowman Lot (25) Jesus Made Eli Willits + Base", 18.0, 4.0)
+    assert a and a["count"] == 25 and round(a["per_card"], 2) == 0.88 and a["tags"] == ["1st"]
+    assert a["unnamed"] == 23          # 25 cards; the title names 2 (Made and Willits)
+    # too expensive per card ($2 each)
+    assert lot("2025 Bowman 1st Bowman Lot (10) Jesus Made", 20.0) is None
+    # cheap, but no 1st or RC mentioned
+    assert lot("2025 Bowman Lot (30) Jesus Made base cards", 15.0) is None
+    # RC only is fine
+    assert lot("Eli Willits RC lot of 40 rookies 2026", 30.0)["tags"] == ["RC"]
+    # card count unknown -> can't price per card
+    assert lot("Jesus Made 1st Bowman lot", 3.0) is None
 
 
 if __name__ == "__main__":

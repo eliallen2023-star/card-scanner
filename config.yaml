@@ -17,7 +17,7 @@ deal:
 # the singles would also clear min_profit ($10).
 lots:
   enabled: true
-  detail_lookups_per_run: 5       # lots per run whose full description we fetch (1 call each, once per lot)
+  detail_lookups_per_run: 8       # lots per run whose full description we fetch (1 call each, once per lot)
   min_single_value: 6.00          # cards worth less than this count $0 toward resale profit
                                   # (fees + shipping eat it when sold one at a time)
   ship_per_card: 1.50             # your cost to mail one single (eBay Standard Envelope ~$1.32)
@@ -26,6 +26,13 @@ lots:
   max_copies_valued: 3            # only this many copies of one card count (extras ~$0)
   max_watch: 20                   # page-only lots (no resale profit) shown at most...
   min_watch_value: 15.00          # ...and only if their singles add up to at least this
+  # Cheap bulk lots (page only): about $1 a card, at least one of your prospects
+  # named (the other cards can be anyone), and 1st or RC cards mentioned.
+  bulk:
+    enabled: true
+    max_price_per_card: 1.00      # (price + shipping) / number of cards
+    min_cards: 5                  # smaller "lots" don't count
+    max_items: 30                 # show at most this many
 
 # ---- Recommended (page only, no phone alerts) ----
 # Works before sold comps exist: a Buy It Now listing priced well under what other
