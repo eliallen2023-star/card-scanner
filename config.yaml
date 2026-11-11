@@ -1,0 +1,78 @@
+# ---- What counts as a deal ----
+deal:
+  min_discount: 0.30        # total cost must be at least 30% below the comp median
+  min_profit: 10.00         # estimated profit after fees/shipping, in dollars
+  min_comps: 3              # need at least this many recent sales to trust the median
+  comp_days: 45             # only use sales from the last N days
+  ebay_fee_rate: 0.1325     # eBay final value fee (approx, trading cards)
+  ship_out_cost: 4.50       # what it costs you to ship when you resell (BMWT)
+  auction_alert_hours: 3    # only look at auctions ending within this many hours
+  max_price: 500            # ignore listings above this total
+  comp_max_gap_minutes: 30  # an ended auction counts as a sale only if we saw it this close to the end
+
+# ---- Card lots ----
+# A lot is valued card by card (lots.py): the cards named in its description (or
+# title), each priced like a single. It shows on the page when price + shipping is
+# at least min_discount (30%) under that total, and sends an alert only if reselling
+# the singles would also clear min_profit ($10).
+lots:
+  enabled: true
+  detail_lookups_per_run: 5       # lots per run whose full description we fetch (1 call each, once per lot)
+  min_single_value: 6.00          # cards worth less than this count $0 toward resale profit
+                                  # (fees + shipping eat it when sold one at a time)
+  ship_per_card: 1.50             # your cost to mail one single (eBay Standard Envelope ~$1.32)
+  min_asks: 5                     # a card's value from asking prices needs this many listings
+                                  # (we use the LOW end of them, not the middle)
+  max_copies_valued: 3            # only this many copies of one card count (extras ~$0)
+  max_watch: 20                   # page-only lots (no resale profit) shown at most...
+  min_watch_value: 15.00          # ...and only if their singles add up to at least this
+
+# ---- Recommended (page only, no phone alerts) ----
+# Works before sold comps exist: a Buy It Now listing priced well under what other
+# sellers are asking for the EXACT same card. Asking prices run high, so treat these
+# as "worth a look" and check sold prices with the links on the page.
+recommend:
+  enabled: true
+  ask_days: 14              # compare with Buy It Now asking prices seen in the last N days
+  min_asks: 3               # need at least this many OTHER listings of the exact card
+  min_under_ask: 0.25       # price + shipping at least 25% under their median
+  min_score: 30             # card desirability score (see main.py: desirability); 0-105
+  max_items: 20             # show at most this many
+
+# ---- Cheap 1st Bowman & rookie cards (page only, no phone alerts) ----
+# Cheap cards to look at or hold, with no profit rule. One listing per card (the cheapest).
+cheap_firsts:
+  enabled: true
+  max_total: 6.00           # price + shipping (if shipping isn't listed, just the price)
+  max_items: 30             # show at most this many
+
+# ---- Searching ----
+search:
+  category_id: "261328"     # eBay "Sports Trading Card Singles". Use "212" (Sports Trading Cards) to widen.
+  lot_category_id: "261329" # eBay "Sports Trading Card Lots", searched about hourly
+  extra_keywords: ""        # e.g. "bowman" to only search Bowman products
+  players_per_search: 4     # players packed into one eBay search: "(Name A, Name B, ...)"
+  auctions_per_search: 200  # auctions per search, soonest-ending first (eBay max is 200)
+  bin_per_search: 200       # Buy It Now listings per search, newest first
+  bin_every_minutes: 60     # auctions are checked every run (15 min); Buy It Now about hourly
+  shipping_lookups_per_run: 10  # max listings per run whose real shipping we look up (1 call each)
+  ship_to_zip: "43210"      # ZIP eBay uses to calculate shipping (Columbus, OH). Note: this file
+                            # is public on GitHub.
+  # API budget per day (eBay allows 5,000):
+  #   auctions: 10 searches x 96 runs = 960 | Buy It Now: 10 x 24 = 240 | lots: 20 x 24 = 480
+  #   = ~1,700, plus at most 10 shipping + 5 lot lookups per run (usually far fewer).
+  #   Worst case ~3,100.
+
+# Titles containing any of these are skipped
+exclude_words: [reprint, " rp ", custom, digital, facsimile, "you pick", "pick your",
+                "u pick", choose, "your choice", "complete your set", proxy, novelty,
+                # Hand-signed (uncertified) cards are worth far less than certified autos.
+                # Not plain "on card": sellers use that for real certified autos too.
+                " ttm ", "in person", " ip auto", " ip signed", "hand signed", "signed on card"]
+
+# ---- Alerts ----
+alerts:
+  timezone: America/New_York
+  quiet_start: 23           # no pushes from 11pm...
+  quiet_end: 8              # ...until 8am (deals wait for the next run)
+  max_per_run: 10

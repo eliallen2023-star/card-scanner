@@ -1,0 +1,59 @@
+name: card-scan
+
+on:
+  schedule:
+    # Every 15 minutes (UTC). Frequent runs see auctions close to their end, so the
+    # recorded sale prices are realistic. (GitHub sometimes starts runs a few minutes late.)
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch:          # lets you hit "Run workflow" manually from the Actions tab
+
+permissions:
+  contents: write             # so the job can save the database and web page
+
+concurrency:
+  group: card-scan
+  cancel-in-progress: false   # never run two scans at once
+
+# Where the data lives: the database and web page are NOT saved on your code branch.
+# They live on a separate branch, "scanner-data", which each run replaces with a single
+# fresh commit. That keeps the repo small (no pile of database copies) and means the
+# bot never touches your code. GitHub Pages publishes scanner-data's /docs folder.
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Load saved database
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin scanner-data; then
+            git show FETCH_HEAD:data/cards.db > data/cards.db
+            echo "loaded saved database"
+          else
+            echo "no saved data yet (first run) - starting fresh"
+          fi
+
+      - name: Scan eBay
+        env:
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python main.py
+
+      - name: Save database and web page
+        run: |
+          git config user.name "card-scanner-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan scanner-data      # a brand-new branch with no history
+          git rm -r -q --cached .                 # leave the code out of it
+          git add -f data/cards.db docs/index.html
+          git commit -q -m "scan $(date -u +%FT%H:%M)"
+          git push --force origin scanner-data    # replace the old copy

@@ -1,0 +1,60 @@
+# MLB Pipeline Top 100 (updated Aug 13, 2026), top 50.
+# Ranks marked "confirmed" were checked against mlb.com; the article didn't
+# list every rank, so a few slots are missing. Check https://www.mlb.com/prospects/top100
+# and fill them in. Pipeline updates the list again in January, so refresh it then.
+#
+# aliases: other spellings sellers use in titles (accents are handled automatically).
+
+prospects:
+  - {rank: 1,  name: "Jesus Made",        team: Brewers,   pos: SS}
+  - {rank: 2,  name: "Leo De Vries",      team: Athletics, pos: SS, aliases: ["Leo DeVries"]}
+  - {rank: 3,  name: "Franklin Arias",    team: Red Sox,   pos: SS}
+  - {rank: 4,  name: "Eli Willits",       team: Nationals, pos: SS}
+  - {rank: 5,  name: "Kade Anderson",     team: Mariners,  pos: LHP}
+  - {rank: 6,  name: "Josue De Paula",    team: Dodgers,   pos: OF, aliases: ["Josue DePaula"]}
+  - {rank: 7,  name: "Seth Hernandez",    team: Pirates,   pos: RHP}
+  - {rank: 8,  name: "Ryan Sloan",        team: Mariners,  pos: RHP}
+  - {rank: 9,  name: "Sebastian Walcott", team: Rangers,   pos: SS}
+  - {rank: 10, name: "Grady Emerson",     team: Rays,      pos: SS}
+  - {rank: 11, name: "Roch Cholowsky",    team: White Sox, pos: SS}
+  - {rank: 12, name: "Theo Gillen",       team: Rays,      pos: OF}
+  - {rank: 13, name: "Max Clark",         team: Tigers,    pos: OF}
+  - {rank: 15, name: "Walker Jenkins",    team: Twins,     pos: OF}
+  - {rank: 16, name: "Mike Sirota",       team: Dodgers,   pos: OF}
+  - {rank: 17, name: "Josuar Gonzalez",   team: Giants,    pos: SS}
+  - {rank: 19, name: "Vahn Lackey",       team: Twins,     pos: C}
+  - {rank: 21, name: "Luis Pena",         team: Brewers,   pos: SS}
+  - {rank: 23, name: "Ethan Salas",       team: Padres,    pos: C}
+  - {rank: 24, name: "Emil Morales",      team: Dodgers,   pos: SS}
+  - {rank: 27, name: "Luis Hernandez",    team: Giants,    pos: SS}
+  - {rank: 29, name: "Angel Genao",       team: Guardians, pos: SS}
+  - {rank: 30, name: "Caleb Bonemer",     team: White Sox, pos: 3B}
+  - {rank: 31, name: "Jackson Flora",     team: Giants,    pos: RHP}
+  - {rank: 32, name: "Ralphy Velazquez",  team: Guardians, pos: 1B}
+  - {rank: 33, name: "Gage Wood",         team: Phillies,  pos: RHP}
+  - {rank: 36, name: "Christian Zazueta", team: Dodgers,   pos: RHP}
+  - {rank: 37, name: "Thomas White",      team: Marlins,   pos: LHP}
+  - {rank: 38, name: "Arjun Nimmala",     team: Angels,    pos: SS}
+  - {rank: 39, name: "Josiah Hartshorn",  team: Cubs,      pos: OF}
+  - {rank: 40, name: "Eric Booth Jr",     team: Orioles,   pos: OF, aliases: ["Eric Booth"]}
+  - {rank: 41, name: "Drew Burress",      team: Athletics, pos: OF}
+  - {rank: 42, name: "Eric Hartman",      team: Braves,    pos: OF}
+  - {rank: 46, name: "Tyler Bremner",     team: Angels,    pos: RHP}
+  - {rank: 47, name: "Jhonny Level",      team: Giants,    pos: SS}
+  - {rank: 49, name: "Anthony Eyanson",   team: Orioles,   pos: RHP}
+  - {rank: 50, name: "Felnin Celesten",   team: Mariners,  pos: SS}
+
+  # --- Missing ranks: 14, 18, 20, 22, 25, 26, 28, 34, 35, 43, 44, 45, 48 ---
+  # Other MLB Pipeline articles call these players Top 100 / top-at-position
+  # prospects, but I couldn't confirm their exact rank. Check the official
+  # list and uncomment the ones that belong in the top 50:
+  # - {rank: 0, name: "Rainiel Rodriguez",  team: Cardinals,    pos: C}
+  # - {rank: 0, name: "Andrew Fischer",     team: Brewers,      pos: 3B}
+  # - {rank: 0, name: "Demetrio Crisantes", team: Diamondbacks, pos: 2B}
+  # - {rank: 0, name: "Eduardo Quintero",   team: Dodgers,      pos: OF}
+  # - {rank: 0, name: "Zyhir Hope",         team: Tigers,       pos: OF}
+  # - {rank: 0, name: "Cam Caminiti",       team: Braves,       pos: LHP}
+  # - {rank: 0, name: "Liam Doyle",         team: Cardinals,    pos: LHP}
+  # - {rank: 0, name: "Robby Snelling",     team: Marlins,      pos: LHP}
+  # - {rank: 0, name: "Jamie Arnold",       team: Athletics,    pos: LHP}
+  # - {rank: 0, name: "Travis Sykora",      team: Nationals,    pos: RHP}

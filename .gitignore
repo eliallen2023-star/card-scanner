@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+
+# Private notes for Claude Code (kept on this PC only)
+CLAUDE.md
+
+# Secrets - never commit these
+.env
+*.env
+
+# Local databases. The GitHub bot saves its own copy on the "scanner-data" branch,
+# so a test database on your PC can never overwrite the real one by accident.
+data/*.db
+
+# Generated pages. The real page (docs/index.html) is saved by the GitHub bot
+# on the separate "scanner-data" branch, not with your code.
+docs/
