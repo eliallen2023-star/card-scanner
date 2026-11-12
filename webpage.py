@@ -23,6 +23,19 @@ def search_words(card):
     return " ".join(w for w in words if w)
 
 
+def card_label(card):
+    """A readable card name, e.g. 'Eli Willits 2025 Bowman Chrome 1st Gold Refractor /50 PSA 10'."""
+    parts = [card.player.title(),
+             card.year if card.year != "?" else "",
+             card.product.title() if card.product != "?" else "",
+             "1st" if card.first else "",
+             "Auto" if card.auto else "",
+             card.parallel.title() if card.parallel != "base" else "",
+             card.serial,
+             card.grade if card.grade != "raw" else ""]     # grade is already "PSA 10"
+    return " ".join(p for p in parts if p)
+
+
 def lookup_links(card):
     """(label, url) pairs for checking sold prices by hand."""
     q = quote_plus(search_words(card))
@@ -95,7 +108,7 @@ def listing_html(it, card, a):
             return f'{r["qty"]} ({r["valued"]} valued)' if r["valued"] < r["qty"] else str(r["qty"])
 
         rows = "".join(
-            f'<tr><td>{e(search_words(r["card"]).title())}</td><td>{qty_text(r)}</td>'
+            f'<tr><td>{e(card_label(r["card"]))}</td><td>{qty_text(r)}</td>'
             f'<td>{money(r["value"])}</td><td class="muted">{e(r["source"])}</td></tr>'
             for r in a["rows"])
         if a["unnamed"]:
@@ -142,15 +155,22 @@ def listing_html(it, card, a):
                    f'<span class="muted">search for: <code>{e(search_words(card))}</code></span></p>')
 
     auction = " auction" if it["buying"] == "AUCTION" else ""
+    # Each listing is a collapsible <details> block. Closed, it's one line (badge,
+    # title, total price); open, it shows the full card.
     return f"""
-    <article class="card{auction}">
-      <div class="photo">{img}</div>
-      <div class="info">
-        <div class="top">{badge}<span class="when">{e(a["when"])}</span></div>
-        <h3>{e(it["title"])}</h3>{stats}{lookups}
-        <a class="btn" href="{e(it["url"])}" target="_blank" rel="noopener">View on eBay</a>
-      </div>
-    </article>"""
+    <details class="item" open>
+      <summary>{badge}<span class="sum-title">{e(it["title"])}</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">{money(a["total"])}</span></summary>
+      <article class="card{auction}">
+        <div class="photo">{img}</div>
+        <div class="info">
+          <div class="top">{badge}<span class="when">{e(a["when"])}</span></div>
+          <h3>{e(it["title"])}</h3>{stats}{lookups}
+          <a class="btn" href="{e(it["url"])}" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>"""
 
 
 CSS = """
@@ -165,13 +185,54 @@ CSS = """
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text);
        font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-main { max-width:920px; margin:0 auto; padding:24px 16px 48px; }
+.layout { display:grid; grid-template-columns:230px minmax(0,1fr); gap:28px;
+          max-width:1180px; margin:0 auto; padding:24px 16px 48px; }
+main { min-width:0; }
 header h1 { margin:0 0 4px; font-size:26px; }
+
+/* ---- left sidebar: Singles / Lots groups, each a dropdown of section tabs ---- */
+.side { position:sticky; top:16px; align-self:start; }
+.side .title { font-weight:700; font-size:18px; margin:0 0 12px; }
+.group { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+         margin-bottom:10px; overflow:hidden; }
+.group > summary { cursor:pointer; padding:10px 14px; font-weight:700; font-size:14px;
+                   text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.group a { display:flex; justify-content:space-between; gap:8px; padding:8px 14px;
+           color:var(--text); text-decoration:none; font-size:14px; border-top:1px solid var(--line); }
+.group a:hover { background:var(--bg); }
+.group a.active { background:var(--accent); color:var(--accent-text); }
+.count { font-variant-numeric:tabular-nums; font-weight:600; opacity:.8; }
+.tools { display:flex; gap:8px; margin-top:4px; }
+.tools button { flex:1; font:inherit; font-size:13px; padding:7px 8px; border-radius:8px; cursor:pointer;
+                background:var(--panel); color:var(--text); border:1px solid var(--line); }
+.tools button:hover { background:var(--bg); }
+
+/* ---- collapsible sections and listings ---- */
+.sec > summary { cursor:pointer; list-style-position:inside; }
+.sum-hint { display:none; font-size:13px; }
+.item[open] > summary .sum-hint { display:inline; }
+.sec > summary h2 { display:inline; }
+.item { margin-bottom:10px; }
+.item > summary { cursor:pointer; display:flex; align-items:center; gap:10px; padding:8px 12px;
+                  background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+.item > summary::-webkit-details-marker { display:none; }
+.item > summary::before { content:"▸"; color:var(--muted); }
+.item[open] > summary::before { content:"▾"; }
+.item[open] > summary { border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom:none; }
+.item[open] > summary .sum-title, .item[open] > summary .badge { display:none; }
+.item[open] > .card { border-top-left-radius:0; border-top-right-radius:0; margin-bottom:0; }
+.sum-title { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px; }
+.item[open] > summary .sum-price { margin-left:auto; }
+.sum-price { font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+@media (max-width:820px) {
+  .layout { grid-template-columns:1fr; gap:16px; }
+  .side { position:static; }
+}
 .muted { color:var(--muted); }
 .summary { display:flex; flex-wrap:wrap; gap:8px 20px; margin:12px 0 4px; color:var(--muted); }
 .summary b { color:var(--text); }
 .demo { background:var(--warn-bg); color:var(--warn); padding:10px 14px; border-radius:8px; margin:16px 0; }
-h2 { font-size:18px; margin:32px 0 12px; }
+h2 { font-size:18px; margin:20px 0 12px; }
 .card { display:flex; gap:16px; background:var(--panel); border:1px solid var(--line);
         border-radius:12px; padding:14px; margin-bottom:12px; }
 .photo { flex:0 0 120px; }
@@ -212,6 +273,47 @@ footer { margin-top:40px; font-size:13px; color:var(--muted); }
 """
 
 
+# Tabs: show one section at a time. The open tab is kept in the address (#cheap-lots)
+# and remembered in this browser, so it survives the 15-minute auto-refresh.
+# Sections are named "tab-cheap-lots" (not "cheap-lots") so the browser doesn't
+# jump down the page to them. Without JavaScript, every section shows on one long page.
+TABS_JS = """
+(function () {
+  var links = document.querySelectorAll('[data-tab]');
+  var sections = document.querySelectorAll('section.tab');
+  function exists(id) { return id && document.getElementById('tab-' + id); }
+  function show(id) {
+    sections.forEach(function (s) { s.hidden = (s.dataset.tabId !== id); });
+    links.forEach(function (a) { a.classList.toggle('active', a.dataset.tab === id); });
+    try { localStorage.setItem('card-scanner-tab', id); } catch (e) {}
+  }
+  links.forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      show(a.dataset.tab);
+      history.replaceState(null, '', '#' + a.dataset.tab);
+      window.scrollTo(0, 0);
+    });
+  });
+  // Which tab to open: the address (#...), else the last one used, else the first non-empty one.
+  var start = location.hash.slice(1), saved = null;
+  try { saved = localStorage.getItem('card-scanner-tab'); } catch (e) {}
+  if (!exists(start)) start = saved;
+  if (!exists(start)) {
+    start = sections[0].dataset.tabId;
+    for (var i = 0; i < sections.length; i++) {
+      if (+sections[i].dataset.count > 0) { start = sections[i].dataset.tabId; break; }
+    }
+  }
+  show(start);
+  // Expand all / Collapse all: every section and listing on the page.
+  function setAll(open) { document.querySelectorAll('main details').forEach(function (d) { d.open = open; }); }
+  document.getElementById('expand-all').addEventListener('click', function () { setAll(true); });
+  document.getElementById('collapse-all').addEventListener('click', function () { setAll(false); });
+})();
+"""
+
+
 def build(path, found, updated, listings, comps, demo=False):
     """found = list of (listing, card, result_dict) from main.py."""
     deals = [x for x in found if x[2]["kind"] == "deal"]
@@ -220,10 +322,54 @@ def build(path, found, updated, listings, comps, demo=False):
     bulk = [x for x in found if x[2]["kind"] == "lot" and x[2].get("bulk")]
     lots = [x for x in found if x[2]["kind"] == "lot" and not x[2].get("bulk")]
 
-    def section(title, items, empty_msg, intro=""):
+    # Every section: (tab id, sidebar group, title, items, message when empty, intro text)
+    sections = [
+        ("deals", "Singles", "Deals", deals,
+         "No deals right now. Deals need at least 3 recorded sales of the exact same card, "
+         "so expect a quiet first few weeks while comps build up.",
+         "Priced at least 30% under recent sales of the exact same card, with $10+ estimated "
+         "profit after fees and shipping. These send phone alerts."),
+        ("recommended", "Singles", "Recommended", recs,
+         "Nothing yet. Picks need at least 3 other Buy It Now listings of the same card, "
+         "which takes a few days of scanning.",
+         "Priced well under what other sellers are asking for the exact same card, ranked by "
+         "how desirable the card is. Asking prices run higher than sale prices, so check sold "
+         "prices before you buy. No phone alerts."),
+        ("cheap-singles", "Singles", "Cheap 1st Bowman &amp; rookies", cheap,
+         "No cheap 1st Bowman or rookie cards right now.",
+         "Buy It Now, up to $6 including shipping. All 1st Bowman cards come first, then "
+         "rookies; each group is ranked by prospect rank and card type. Not checked against "
+         "comps: these are cheap cards to look at or hold, not quick flips. One listing per "
+         "card: the cheapest. Sellers often call prospect cards \"RC\" when they aren't "
+         "official rookie cards."),
+        ("cheap-lots", "Lots", "Cheap 1st &amp; RC lots", bulk,
+         "No cheap 1st/RC lots right now.",
+         "Lots that cost about $1 or less per card (price + shipping), name at least one of "
+         "your prospects (the other cards can be anyone), and mention 1st or RC cards. Ranked "
+         "by 1sts first, then RCs, then how many prospects and how highly ranked. No phone alerts."),
+        ("lots-vs-singles", "Lots", "Lots vs. singles", lots,
+         "No lots priced well under their singles right now.",
+         "Each card in the lot is priced like a single (sold comps first, then asking prices), "
+         "using the seller's description. Shown when the lot costs 30%+ less than its singles; "
+         "a green badge means reselling the singles should also make $10+, and only those "
+         "send phone alerts."),
+    ]
+
+    def section_html(sid, group, title, items, empty_msg, intro):
         body = "".join(listing_html(*x) for x in items) or f'<p class="empty">{empty_msg}</p>'
-        intro = f'<p class="muted intro">{intro}</p>' if intro else ""
-        return f"<h2>{title} ({len(items)})</h2>{intro}{body}"
+        return f"""
+  <section class="tab" id="tab-{sid}" data-tab-id="{sid}" data-count="{len(items)}">
+    <details class="sec" open>
+      <summary><h2>{title} ({len(items)})</h2></summary>
+      <p class="muted intro">{intro}</p>
+      {body}
+    </details>
+  </section>"""
+
+    def group_html(group):
+        links = "".join(f'<a href="#{sid}" data-tab="{sid}">{title}<span class="count">{len(items)}</span></a>'
+                        for sid, g, title, items, _, _ in sections if g == group)
+        return f'<details class="group" open><summary>{group}</summary>{links}</details>'
 
     demo_note = ('<p class="demo">Demo page: these are fake listings, so the eBay links '
                  'go nowhere.</p>') if demo else ""
@@ -237,52 +383,35 @@ def build(path, found, updated, listings, comps, demo=False):
 <style>{CSS}</style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Card Scanner</h1>
-    <div class="muted">Underpriced top-prospect cards on eBay · updated {e(updated)}</div>
-    <div class="summary">
-      <span><b>{listings}</b> listings checked</span>
-      <span><b>{comps}</b> sales recorded as comps</span>
-      <span><b>{len(deals)}</b> deals</span>
-      <span><b>{len(recs)}</b> recommended</span>
-      <span><b>{len(cheap)}</b> cheap 1sts &amp; rookies</span>
-      <span><b>{len(bulk)}</b> cheap 1st/RC lots</span>
-      <span><b>{len(lots)}</b> lots vs. singles</span>
+<div class="layout">
+  <nav class="side" aria-label="Sections">
+    <p class="title">Card Scanner</p>
+    {group_html("Singles")}
+    {group_html("Lots")}
+    <div class="tools">
+      <button type="button" id="expand-all">Expand all</button>
+      <button type="button" id="collapse-all">Collapse all</button>
     </div>
-  </header>
-  {demo_note}
-  {section("Deals", deals, "No deals right now. Deals need at least 3 recorded sales of the "
-           "exact same card, so expect a quiet first few weeks while comps build up.")}
-  {section("Recommended: worth a look", recs,
-           "Nothing yet. Picks need at least 3 other Buy It Now listings of the same card, "
-           "which takes a few days of scanning.",
-           intro="Priced well under what other sellers are asking for the exact same card, "
-                 "ranked by how desirable the card is. Asking prices run higher than sale "
-                 "prices, so check sold prices before you buy. These don't send phone alerts.")}
-  {section("Cheap 1st Bowman &amp; rookie cards", cheap,
-           "No cheap 1st Bowman or rookie cards right now.",
-           intro="Buy It Now, up to $6 including shipping. All 1st Bowman cards come first, "
-                 "then rookies; each group is ranked by prospect rank and card type. Not checked against comps: these are cheap "
-                 "cards to look at or hold, not quick flips. One listing per card: the cheapest. "
-                 "Sellers often call prospect cards \"RC\" when they aren't official rookie cards.")}
-  {section("Cheap 1st &amp; RC lots (about $1 a card)", bulk,
-           "No cheap 1st/RC lots right now.",
-           intro="Lots that cost about $1 or less per card (price + shipping), name at least "
-                 "one of your prospects (the other cards can be anyone), and mention 1st or RC "
-                 "cards. Ranked by 1sts first, then RCs, then how many prospects and how highly "
-                 "ranked. No phone alerts.")}
-  {section("Lots vs. singles", lots, "No lots priced well under their singles right now.",
-           intro="Each card in the lot is priced like a single (sold comps first, then asking "
-                 "prices), using the seller's description. Shown when the lot costs 30%+ less "
-                 "than its singles; a green badge means reselling the singles should also make "
-                 "$10+, and only those send phone alerts.")}
-  <footer>
-    Prices are estimates from recent auction results. Before buying, check the photos
-    (condition, centering, fakes), the seller's feedback, and recent sold prices yourself.
-    Auction prices will still rise before they end.
-  </footer>
-</main>
+  </nav>
+  <main>
+    <header>
+      <h1>Card Scanner</h1>
+      <div class="muted">Underpriced top-prospect cards on eBay · updated {e(updated)}</div>
+      <div class="summary">
+        <span><b>{listings}</b> listings checked</span>
+        <span><b>{comps}</b> sales recorded as comps</span>
+      </div>
+    </header>
+    {demo_note}
+    {"".join(section_html(*s) for s in sections)}
+    <footer>
+      Prices are estimates from recent auction results and asking prices. Before buying,
+      check the photos (condition, centering, fakes), the seller's feedback, and recent sold
+      prices yourself. Auction prices will still rise before they end.
+    </footer>
+  </main>
+</div>
+<script>{TABS_JS}</script>
 </body>
 </html>
 """
