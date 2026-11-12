@@ -159,10 +159,20 @@ def bulk_lot(it, card, store, cfg, parser, ranks):
             "median": None, "comps": 0}
 
 
+def resale_profit(rows, total, cfg):
+    """Profit from buying the lot for `total` and selling the cards one by one on eBay.
+    Cards worth less than min_single_value can't be sold one at a time for a profit
+    (fees + shipping eat it all), so they count $0 here."""
+    d, L = cfg["deal"], cfg["lots"]
+    net = sum((r["value"] * (1 - d["ebay_fee_rate"]) - L["ship_per_card"]) * r["valued"]
+              for r in rows if r["value"] >= L["min_single_value"])
+    return net - total
+
+
 def evaluate_lot(it, card, store, cfg, parser):
     """Return a dict describing the lot if it's priced well under the sum of its
     singles, else None. "alert" says whether it also clears the profit rule."""
-    d, L = cfg["deal"], cfg["lots"]
+    d = cfg["deal"]
     cards, unnamed, source = cards_in_lot(it["title"], store.get_lot_details(it["item_id"]), parser)
     if not cards:
         return None
@@ -175,11 +185,7 @@ def evaluate_lot(it, card, store, cfg, parser):
     if discount < d["min_discount"]:
         return None
 
-    # Resale profit: cards worth less than min_single_value can't be sold one at a
-    # time for a profit (fees + shipping eat it all), so they count $0 here.
-    net = sum((r["value"] * (1 - d["ebay_fee_rate"]) - L["ship_per_card"]) * r["valued"]
-              for r in rows if r["value"] >= L["min_single_value"])
-    profit = net - total
+    profit = resale_profit(rows, total, cfg)
     return {"kind": "lot",
             "headline": f"LOT: {discount:.0%} under singles value (${total:.2f} vs ${singles:.2f})",
             "rows": rows, "unnamed": unnamed, "source": source,

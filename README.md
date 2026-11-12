@@ -37,17 +37,25 @@ links to eBay sold listings, 130point and PSA prices so you can look up comps by
 Both `check.py` and `paste.py` first download the scanner's latest prices from the
 `scanner-data` branch on GitHub (add `--offline` to skip that).
 
-### Judge a whole Facebook sale post (paste mode)
-Copy a post from a Facebook group (or anywhere) and paste it in:
+### Judge a whole Facebook page of sale posts (paste mode)
+Open a Facebook group, press **Ctrl+A** then **Ctrl+C** to copy the whole page (or copy one
+post), then run:
 ```powershell
-.venv\Scripts\python.exe paste.py --year 2025      # paste, then type  done  on its own line
-.venv\Scripts\python.exe paste.py --file post.txt  # or save the post in a text file
+.venv\Scripts\python.exe paste.py --year 2025      # reads what you copied
+.venv\Scripts\python.exe paste.py --type           # or paste into the terminal, then type  done
+.venv\Scripts\python.exe paste.py --file post.txt  # or read a saved text file
 ```
-Each line with a prospect's full name and a price (`$80`, `80 shipped`, `25 + ship`, `35 obo`)
-is one card; the price can also be on the next line. Shorthand like `BDC` is understood.
-Prices not marked "shipped" get `--ship` added (default $5). Every card gets a verdict and
-lookup links, best first. Nothing touches Facebook: it doesn't allow automated access, so
-you copy the post yourself. Pay with PayPal Goods & Services, never Friends & Family.
+- **Singles:** a line with a prospect and a price (`$80`, `80 shipped`, `25 + ship`, `35 obo`).
+  The price can be on the line below or above. Shorthand like `BDC` is understood.
+- **Last names work** ("Made 1st auto" = Jesus Made) when the line also has card words, only one
+  prospect has that last name, and everyday-word names (Made, White) are capitalized.
+- **Lots:** a line saying lot / bundle / 25 cards, or naming 2+ prospects. Card lines right under
+  it are its checklist. Each card is valued like the scanner values eBay lots.
+- Facebook's own text (Like, Comment, names, chat) is skipped. Prices not marked "shipped" get
+  `--ship` added (default $5). Everything gets a verdict, best first.
+
+Nothing touches Facebook: it doesn't allow automated access, so you copy the page yourself.
+Pay with PayPal Goods & Services, never Friends & Family.
 
 ### 2. Get eBay API keys
 1. Sign up at developer.ebay.com and create an app ("Application Keys").
