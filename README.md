@@ -34,6 +34,21 @@ start docs\demo.html                       # open the demo web page
 Shows the sales the scanner has recorded for that exact card, your estimated profit, and
 links to eBay sold listings, 130point and PSA prices so you can look up comps by hand.
 
+Both `check.py` and `paste.py` first download the scanner's latest prices from the
+`scanner-data` branch on GitHub (add `--offline` to skip that).
+
+### Judge a whole Facebook sale post (paste mode)
+Copy a post from a Facebook group (or anywhere) and paste it in:
+```powershell
+.venv\Scripts\python.exe paste.py --year 2025      # paste, then type  done  on its own line
+.venv\Scripts\python.exe paste.py --file post.txt  # or save the post in a text file
+```
+Each line with a prospect's full name and a price (`$80`, `80 shipped`, `25 + ship`, `35 obo`)
+is one card; the price can also be on the next line. Shorthand like `BDC` is understood.
+Prices not marked "shipped" get `--ship` added (default $5). Every card gets a verdict and
+lookup links, best first. Nothing touches Facebook: it doesn't allow automated access, so
+you copy the post yourself. Pay with PayPal Goods & Services, never Friends & Family.
+
 ### 2. Get eBay API keys
 1. Sign up at developer.ebay.com and create an app ("Application Keys").
 2. eBay asks you to set up **Marketplace Account Deletion** notifications before it
