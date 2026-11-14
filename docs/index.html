@@ -1,0 +1,1724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="900"><!-- reload every 15 min to pick up the newest scan -->
+<title>Card Scanner</title>
+<style>
+:root { --bg:#f6f7f9; --panel:#fff; --text:#1b1f24; --muted:#5f6b7a; --line:#dde2e8;
+        --accent:#0b5fff; --accent-text:#fff; --good:#0a7a3d; --good-bg:#e3f5ea;
+        --warn-bg:#fff4d6; --warn:#8a5a00; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#111418; --panel:#1a1f25; --text:#e8ecf1; --muted:#9aa6b4; --line:#2c333c;
+          --accent:#5b93ff; --accent-text:#0b0f14; --good:#5fd08f; --good-bg:#15301f;
+          --warn-bg:#33290f; --warn:#f0c25a; }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+       font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.layout { display:grid; grid-template-columns:230px minmax(0,1fr); gap:28px;
+          max-width:1180px; margin:0 auto; padding:24px 16px 48px; }
+main { min-width:0; }
+header h1 { margin:0 0 4px; font-size:26px; }
+
+/* ---- left sidebar: Singles / Lots groups, each a dropdown of section tabs ---- */
+.side { position:sticky; top:16px; align-self:start; }
+.side .title { font-weight:700; font-size:18px; margin:0 0 12px; }
+.group { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+         margin-bottom:10px; overflow:hidden; }
+.group > summary { cursor:pointer; padding:10px 14px; font-weight:700; font-size:14px;
+                   text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.group a { display:flex; justify-content:space-between; gap:8px; padding:8px 14px;
+           color:var(--text); text-decoration:none; font-size:14px; border-top:1px solid var(--line); }
+.group a:hover { background:var(--bg); }
+.group a.active { background:var(--accent); color:var(--accent-text); }
+.count { font-variant-numeric:tabular-nums; font-weight:600; opacity:.8; }
+.tools { display:flex; gap:8px; margin-top:4px; }
+.tools button { flex:1; font:inherit; font-size:13px; padding:7px 8px; border-radius:8px; cursor:pointer;
+                background:var(--panel); color:var(--text); border:1px solid var(--line); }
+.tools button:hover { background:var(--bg); }
+
+/* ---- collapsible sections and listings ---- */
+.sec > summary { cursor:pointer; list-style-position:inside; }
+.sum-hint { display:none; font-size:13px; }
+.item[open] > summary .sum-hint { display:inline; }
+.sec > summary h2 { display:inline; }
+.item { margin-bottom:10px; }
+.item > summary { cursor:pointer; display:flex; align-items:center; gap:10px; padding:8px 12px;
+                  background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+.item > summary::-webkit-details-marker { display:none; }
+.item > summary::before { content:"▸"; color:var(--muted); }
+.item[open] > summary::before { content:"▾"; }
+.item[open] > summary { border-bottom-left-radius:0; border-bottom-right-radius:0; border-bottom:none; }
+.item[open] > summary .sum-title, .item[open] > summary .badge { display:none; }
+.item[open] > .card { border-top-left-radius:0; border-top-right-radius:0; margin-bottom:0; }
+.sum-title { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px; }
+.item[open] > summary .sum-price { margin-left:auto; }
+.sum-price { font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+@media (max-width:820px) {
+  .layout { grid-template-columns:1fr; gap:16px; }
+  .side { position:static; }
+}
+.muted { color:var(--muted); }
+.summary { display:flex; flex-wrap:wrap; gap:8px 20px; margin:12px 0 4px; color:var(--muted); }
+.summary b { color:var(--text); }
+.demo { background:var(--warn-bg); color:var(--warn); padding:10px 14px; border-radius:8px; margin:16px 0; }
+h2 { font-size:18px; margin:20px 0 12px; }
+.card { display:flex; gap:16px; background:var(--panel); border:1px solid var(--line);
+        border-radius:12px; padding:14px; margin-bottom:12px; }
+.photo { flex:0 0 120px; }
+.photo img, .noimg { width:120px; height:160px; object-fit:contain; border-radius:6px; background:var(--bg); }
+.noimg { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+.info { flex:1; min-width:0; }
+.top { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; color:var(--muted); }
+.badge { background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:2px 10px;
+         font-weight:600; color:var(--text); }
+.badge.good { background:var(--good-bg); border-color:transparent; color:var(--good); }
+.badge.rec { color:var(--accent); }
+.intro { margin:-4px 0 12px; font-size:14px; }
+.auction .when { color:var(--warn); font-weight:600; }
+h3 { font-size:15px; margin:8px 0; overflow-wrap:anywhere; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin:0 0 10px; }
+.stats div { background:var(--bg); border-radius:8px; padding:6px 10px; }
+dt { font-size:12px; color:var(--muted); }
+dd { margin:0; font-weight:600; font-variant-numeric:tabular-nums; }
+dd.good { color:var(--good); }
+.names, .lookup { font-size:13px; margin:0 0 10px; }
+.warn { font-size:13px; margin:0 0 10px; background:var(--warn-bg); color:var(--warn);
+        padding:6px 10px; border-radius:8px; }
+.lookup a { color:var(--accent); }
+code { font-size:12px; overflow-wrap:anywhere; }
+table.lot { width:100%; border-collapse:collapse; font-size:13px; margin:0 0 10px; }
+table.lot th, table.lot td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
+table.lot th { color:var(--muted); font-weight:600; font-size:12px; }
+table.lot td:nth-child(2), table.lot td:nth-child(3) { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.btn { display:inline-block; background:var(--accent); color:var(--accent-text); text-decoration:none;
+       font-weight:600; padding:8px 16px; border-radius:8px; }
+.empty { background:var(--panel); border:1px dashed var(--line); border-radius:12px; padding:20px; color:var(--muted); }
+footer { margin-top:40px; font-size:13px; color:var(--muted); }
+@media (max-width:520px) {
+  .card { flex-direction:column; }
+  .photo { flex:none; }
+  .photo img, .noimg { width:100%; height:200px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="side" aria-label="Sections">
+    <p class="title">Card Scanner</p>
+    <details class="group" open><summary>Singles</summary><a href="#deals" data-tab="deals">Deals<span class="count">0</span></a><a href="#recommended" data-tab="recommended">Recommended<span class="count">3</span></a><a href="#cheap-singles" data-tab="cheap-singles">Cheap 1st Bowman &amp; rookies<span class="count">30</span></a></details>
+    <details class="group" open><summary>Lots</summary><a href="#cheap-lots" data-tab="cheap-lots">Cheap 1st &amp; RC lots<span class="count">30</span></a><a href="#lots-vs-singles" data-tab="lots-vs-singles">Lots vs. singles<span class="count">7</span></a></details>
+    <div class="tools">
+      <button type="button" id="expand-all">Expand all</button>
+      <button type="button" id="collapse-all">Collapse all</button>
+    </div>
+  </nav>
+  <main>
+    <header>
+      <h1>Card Scanner</h1>
+      <div class="muted">Underpriced top-prospect cards on eBay · updated Nov 14, 2026 03:41 PM EST</div>
+      <div class="summary">
+        <span><b>3891</b> listings checked</span>
+        <span><b>79</b> sales recorded as comps</span>
+      </div>
+    </header>
+    
+    
+  <section class="tab" id="tab-deals" data-tab-id="deals" data-count="0">
+    <details class="sec" open>
+      <summary><h2>Deals (0)</h2></summary>
+      <p class="muted intro">Priced at least 30% under recent sales of the exact same card, with $10+ estimated profit after fees and shipping. These send phone alerts.</p>
+      <p class="empty">No deals right now. Deals need at least 3 recorded sales of the exact same card, so expect a quiet first few weeks while comps build up.</p>
+    </details>
+  </section>
+  <section class="tab" id="tab-recommended" data-tab-id="recommended" data-count="3">
+    <details class="sec" open>
+      <summary><h2>Recommended (3)</h2></summary>
+      <p class="muted intro">Priced well under what other sellers are asking for the exact same card, ranked by how desirable the card is. Asking prices run higher than sale prices, so check sold prices before you buy. No phone alerts.</p>
+      
+    <details class="item" open>
+      <summary><span class="badge rec">Recommended · score 127</span><span class="sum-title">2026 Topps Bowman Chrome 1st Bowman Samy Natera Jr Auto + Luis Hernandez 2-Card</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$12.36</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/5KAAAeSwpPxquXSW/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Recommended · score 127</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Topps Bowman Chrome 1st Bowman Samy Natera Jr Auto + Luis Hernandez 2-Card</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$11.00</dd></div>
+        <div><dt>Shipping</dt><dd>$1.36</dd></div>
+        <div><dt>Typical ask (4)</dt><dd>$155.00</dd></div>
+        <div><dt>Under typical ask</dt><dd class="good">92%</dd></div>
+        <div><dt>Est. profit (at ask)</dt><dd class="good">$117.60</dd></div>
+        <div><dt>Sold comps</dt><dd>none yet</dd></div>
+      </dl>
+      <p class="names">#27 prospect · 1st Bowman · Auto</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=luis+hernandez+2026+bowman+chrome+1st+auto&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>luis hernandez 2026 bowman chrome 1st auto</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/168730695892?_skw=%28Luis+Hernandez%2C+Angel+Genao%2C+Caleb+Bonemer%2C+Jackson+Flora%29&amp;hash=item27492218d4:g:5KAAAeSwpPxquXSW" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Recommended · score 65</span><span class="sum-title">2025 Bowman Draft #BDC-25 Seth Hernandez Chrome</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/ZUcAAeSwtKZq-Js-/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Recommended · score 65</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft #BDC-25 Seth Hernandez Chrome</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask (4)</dt><dd>$39.50</dd></div>
+        <div><dt>Under typical ask</dt><dd class="good">92%</dd></div>
+        <div><dt>Est. profit (at ask)</dt><dd class="good">$26.78</dd></div>
+        <div><dt>Sold comps</dt><dd>none yet</dd></div>
+      </dl>
+      <p class="names">#7 prospect</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=seth+hernandez+2025+bowman+chrome+draft&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>seth hernandez 2025 bowman chrome draft</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/336897579986?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item4e70a91bd2:g:ZUcAAeSwtKZq-Js-" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Recommended · score 41</span><span class="sum-title">2025 Bowman Draft Anthony Eyanson Chrome (x2)  &amp; 1st Paper x16 #BDC-116 Orioles</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$23.12</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/m-IAAeSwVf1qhfmH/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Recommended · score 41</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Anthony Eyanson Chrome (x2)  &amp; 1st Paper x16 #BDC-116 Orioles</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$17.00</dd></div>
+        <div><dt>Shipping</dt><dd>$6.12</dd></div>
+        <div><dt>Typical ask (3)</dt><dd>$66.99</dd></div>
+        <div><dt>Under typical ask</dt><dd class="good">65%</dd></div>
+        <div><dt>Est. profit (at ask)</dt><dd class="good">$30.49</dd></div>
+        <div><dt>Sold comps</dt><dd>none yet</dd></div>
+      </dl>
+      <p class="names">#49 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=anthony+eyanson+2025+bowman+chrome+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>anthony eyanson 2025 bowman chrome draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/267761909221?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item3e57da7de5:g:m-IAAeSwVf1qhfmH" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    </details>
+  </section>
+  <section class="tab" id="tab-cheap-singles" data-tab-id="cheap-singles" data-count="30">
+    <details class="sec" open>
+      <summary><h2>Cheap 1st Bowman &amp; rookies (30)</h2></summary>
+      <p class="muted intro">Buy It Now, up to $6 including shipping. All 1st Bowman cards come first, then rookies; each group is ranked by prospect rank and card type. Not checked against comps: these are cheap cards to look at or hold, not quick flips. One listing per card: the cheapest. Sellers often call prospect cards "RC" when they aren't official rookie cards.</p>
+      
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 77</span><span class="sum-title">2025 Bowman Draft Seattle Mariners Team Set - Kade Anderson 1st Rookie Card RC +</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/IaAAAeSwppNp5Mvr/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 77</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Seattle Mariners Team Set - Kade Anderson 1st Rookie Card RC +</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$2.37 (2)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#5 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=kade+anderson+2025+bowman+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>kade anderson 2025 bowman draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/267819932765?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item3e5b4fdc5d:g:IaAAAeSwppNp5Mvr" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 77</span><span class="sum-title">2026 Bowman LSU Tigers Baseball Team Set Kade Anderson Daniel Dickinson 1st RC +</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.35</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/ia4AAeSwihxqcQZ~/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 77</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman LSU Tigers Baseball Team Set Kade Anderson Daniel Dickinson 1st RC +</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.36</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.35 (1)</dd></div>
+      </dl>
+      <p class="names">#5 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=kade+anderson+2026+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>kade anderson 2026 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/267843604279?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item3e5cb90f37:g:ia4AAeSwihxqcQZ~" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 70</span><span class="sum-title">2025 Bowman Baseball Jesus Made #BP-66 1st Bowman Brewers Paper</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$1.79</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/GBoAAeSwhtVq-L-5/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 70</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Baseball Jesus Made #BP-66 1st Bowman Brewers Paper</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.79</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$4.50 (8)</dd></div>
+      </dl>
+      <p class="names">#1 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=jesus+made+2025+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>jesus made 2025 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/307282751965?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item478b7ab1dd:g:GBoAAeSwhtVq-L-5" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 70</span><span class="sum-title">Max Clark Rookie Card 2023 1st Bowman #BD-76 RC non auto MLB Debut call up</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.62</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/7n0AAeSwLcRq97T8/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 70</span><span class="when">Buy It Now</span></div>
+          <h3>Max Clark Rookie Card 2023 1st Bowman #BD-76 RC non auto MLB Debut call up</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.50</dd></div>
+        <div><dt>Shipping</dt><dd>$1.12</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#13 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=max+clark+2023+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>max clark 2023 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/287728216589?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=item42fdf02a0d:g:7n0AAeSwLcRq97T8" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="sum-title">Topps 2025 Bowman Prospects Franklin Arias 1st Bowman Red Sox #BP-67</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/0acAAeSwGEVq-KBo/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="when">Buy It Now</span></div>
+          <h3>Topps 2025 Bowman Prospects Franklin Arias 1st Bowman Red Sox #BP-67</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$51.25 (2)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#3 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=franklin+arias+2025+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>franklin arias 2025 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/366810092459?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item556795d3ab:g:0acAAeSwGEVq-KBo" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="sum-title">2025 Bowman Chrome ELI WILLITS #BDC-1 1st Bowman</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/dvYAAeSwxylq93Ou/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Chrome ELI WILLITS #BDC-1 1st Bowman</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$4.99 (5)</dd></div>
+      </dl>
+      <p class="names">#4 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=eli+willits+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>eli willits 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/117519718713?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item1b5cb89939:g:dvYAAeSwxylq93Ou" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="sum-title">Topps 2024 Bowman Chrome Prospects 1st Bowman Franklin Arias Red Sox #BCP-67</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/jR8AAeSwHq1q-J9a/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 68</span><span class="when">Buy It Now</span></div>
+          <h3>Topps 2024 Bowman Chrome Prospects 1st Bowman Franklin Arias Red Sox #BCP-67</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.00 (1)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#3 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=franklin+arias+2024+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>franklin arias 2024 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/366810090276?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item556795cb24:g:jR8AAeSwHq1q-J9a" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 67</span><span class="sum-title">Kade Anderson 2025 Bowman Draft #BDC-3 REFRACTOR Chrome 1st Prospect - Mariners!</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/TG8AAeSwVoBq-H68/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 67</span><span class="when">Buy It Now</span></div>
+          <h3>Kade Anderson 2025 Bowman Draft #BDC-3 REFRACTOR Chrome 1st Prospect - Mariners!</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$20.66 (2)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#5 prospect · 1st Bowman · Refractor</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=kade+anderson+2025+bowman+chrome+draft+1st+refractor&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>kade anderson 2025 bowman chrome draft 1st refractor</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/800916479031?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=itemba7a579c37:g:TG8AAeSwVoBq-H68" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 66</span><span class="sum-title">Josue De Paula 2023 Bowman 1st Prospect #BP-111 - Los Angeles Dodgers</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/~6UAAeSwId9qzXiP/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 66</span><span class="when">Buy It Now</span></div>
+          <h3>Josue De Paula 2023 Bowman 1st Prospect #BP-111 - Los Angeles Dodgers</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.00</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$4.10 (6)</dd></div>
+      </dl>
+      <p class="names">#6 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=josue+de+paula+2023+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>josue de paula 2023 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/128191776293?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item1dd8d34625:g:~6UAAeSwId9qzXiP" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 64</span><span class="sum-title">Luis Pena (RC) 1st Bowman Prospects BP-38 Rookie 2025</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.09</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/cJIAAeSwycZqWRhD/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 64</span><span class="when">Buy It Now</span></div>
+          <h3>Luis Pena (RC) 1st Bowman Prospects BP-38 Rookie 2025</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.09</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$2.99 (6)</dd></div>
+      </dl>
+      <p class="names">#21 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=luis+pena+2025+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>luis pena 2025 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/128192814107?_skw=%28Vahn+Lackey%2C+Luis+Pena%2C+Ethan+Salas%2C+Emil+Morales%29&amp;hash=item1dd8e31c1b:g:cJIAAeSwycZqWRhD" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 64</span><span class="sum-title">Topps 2023 Bowman Chrome Ryan Sloan 1st Bowman Chrome #BDC-99 - Mariners</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.50</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/-qUAAeSweTtq9-yQ/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 64</span><span class="when">Buy It Now</span></div>
+          <h3>Topps 2023 Bowman Chrome Ryan Sloan 1st Bowman Chrome #BDC-99 - Mariners</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.50</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#8 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=ryan+sloan+2023+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>ryan sloan 2023 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/307281853939?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item478b6cfdf3:g:-qUAAeSweTtq9-yQ" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 61</span><span class="sum-title">2024 Bowman Draft #BD-73 Theo Gillen 1st Bowman</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$1.75</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/c0YAAeSwjq5q98GT/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 61</span><span class="when">Buy It Now</span></div>
+          <h3>2024 Bowman Draft #BD-73 Theo Gillen 1st Bowman</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.75</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$10.24 (2)</dd></div>
+      </dl>
+      <p class="names">#12 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=theo+gillen+2024+bowman+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>theo gillen 2024 bowman draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/137929116543?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item201d374b7f:g:c0YAAeSwjq5q98GT" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 57</span><span class="sum-title">2025 Bowman Chrome 1st - Prospects Josuar Gonzalez #BCP-153</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/VIgAAeSwvmBq-LAh/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 57</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Chrome 1st - Prospects Josuar Gonzalez #BCP-153</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.50 (3)</dd></div>
+      </dl>
+      <p class="names">#17 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=josuar+gonzalez+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>josuar gonzalez 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/880117040581?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=itemcceb1045c5:g:VIgAAeSwvmBq-LAh" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 54</span><span class="sum-title">2026 Bowman Chrome 1st Bowman Card Mojo Refractor # BCP-200 Luis Hernandez</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.31</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/KW0AAeSwjQtq99K~/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 54</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Chrome 1st Bowman Card Mojo Refractor # BCP-200 Luis Hernandez</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.32</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.99 (8)</dd></div>
+      </dl>
+      <p class="names">#27 prospect · 1st Bowman · Mojo Refractor</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=luis+hernandez+2026+bowman+chrome+1st+mojo+refractor&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>luis hernandez 2026 bowman chrome 1st mojo refractor</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/147679813667?_skw=%28Luis+Hernandez%2C+Angel+Genao%2C+Caleb+Bonemer%2C+Jackson+Flora%29&amp;hash=item2262672023:g:KW0AAeSwjQtq99K~" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 54</span><span class="sum-title">Gage Wood 1st Bowman Chrome BDC-4 (RC) 2025 Phillies</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/RwsAAeSwg9xq90fq/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 54</span><span class="when">Buy It Now</span></div>
+          <h3>Gage Wood 1st Bowman Chrome BDC-4 (RC) 2025 Phillies</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$4.49 (4)</dd></div>
+      </dl>
+      <p class="names">#33 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=gage+wood+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>gage wood 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/920139777433?_skw=%28Ralphy+Velazquez%2C+Gage+Wood%2C+Christian+Zazueta%2C+Thomas+White%29&amp;hash=itemd63c9ac599:g:RwsAAeSwg9xq90fq" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="sum-title">2025 Bowman Draft Josiah Hartshorn Chicago Cubs #BD-21 1st RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.27</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/VWMAAeSwUDRqtVIS/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Josiah Hartshorn Chicago Cubs #BD-21 1st RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.49</dd></div>
+        <div><dt>Shipping</dt><dd>$0.78</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#39 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=josiah+hartshorn+2025+bowman+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>josiah hartshorn 2025 bowman draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/137926061371?_skw=%28Arjun+Nimmala%2C+Josiah+Hartshorn%2C+Eric+Booth+Jr%2C+Eric+Booth%2C+Drew+Burress%29&amp;hash=item201d08ad3b:g:VWMAAeSwUDRqtVIS" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="sum-title">Josiah Hartshorn 1st Bowman Chrome BDC-21 (RC) 2025 Cubs</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.29</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/C3QAAeSwJmBq90fi/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="when">Buy It Now</span></div>
+          <h3>Josiah Hartshorn 1st Bowman Chrome BDC-21 (RC) 2025 Cubs</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.29</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$9.99 (1)</dd></div>
+      </dl>
+      <p class="names">#39 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=josiah+hartshorn+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>josiah hartshorn 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/920139777329?_skw=%28Arjun+Nimmala%2C+Josiah+Hartshorn%2C+Eric+Booth+Jr%2C+Eric+Booth%2C+Drew+Burress%29&amp;hash=itemd63c9ac531:g:C3QAAeSwJmBq90fi" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="sum-title">Trey Yesavage RC Arjun Nimmala Top 100 JoJo Parker 1st Chrome 2026 Bowman</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.98</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/CZcAAeSwIRpqJNSe/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 50</span><span class="when">Buy It Now</span></div>
+          <h3>Trey Yesavage RC Arjun Nimmala Top 100 JoJo Parker 1st Chrome 2026 Bowman</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.99</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#38 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=arjun+nimmala+2026+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>arjun nimmala 2026 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/318420001605?_skw=%28Arjun+Nimmala%2C+Josiah+Hartshorn%2C+Eric+Booth+Jr%2C+Eric+Booth%2C+Drew+Burress%29&amp;hash=item4a234fa345:g:CZcAAeSwIRpqJNSe" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 49</span><span class="sum-title">Topps Bowman Chrome 2026 1st Bowman Prospect-Luis Hernandez-#BCP-200</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/MegAAeSw~otq9oyu/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 49</span><span class="when">Buy It Now</span></div>
+          <h3>Topps Bowman Chrome 2026 1st Bowman Prospect-Luis Hernandez-#BCP-200</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.00 (11)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#27 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=luis+hernandez+2026+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>luis hernandez 2026 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/820349117209?_skw=%28Luis+Hernandez%2C+Angel+Genao%2C+Caleb+Bonemer%2C+Jackson+Flora%29&amp;hash=itembf009e2319:g:MegAAeSw~otq9oyu" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 49</span><span class="sum-title">2025 Bowman Chrome Draft 1st Gage Wood Phillies Mojo Refractor # BDC-4</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.36</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/oC4AAeSwva1qmah2/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 49</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Chrome Draft 1st Gage Wood Phillies Mojo Refractor # BDC-4</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.00</dd></div>
+        <div><dt>Shipping</dt><dd>$1.36</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#33 prospect · 1st Bowman · Mojo Refractor</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=gage+wood+2025+bowman+chrome+draft+1st+mojo+refractor&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>gage wood 2025 bowman chrome draft 1st mojo refractor</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/327340258514?_skw=%28Ralphy+Velazquez%2C+Gage+Wood%2C+Christian+Zazueta%2C+Thomas+White%29&amp;hash=item4c36fff4d2:g:oC4AAeSwva1qmah2" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 47</span><span class="sum-title">2026 Bowman Chrome Prospects ERIC HARTMAN (RC) 1st Bowman #BCP-102 Braves</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.21</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/WEwAAeSwnLFq9hqG/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 47</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Chrome Prospects ERIC HARTMAN (RC) 1st Bowman #BCP-102 Braves</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.39</dd></div>
+        <div><dt>Shipping</dt><dd>$1.82</dd></div>
+        <div><dt>Typical ask</dt><dd>$11.49 (2)</dd></div>
+      </dl>
+      <p class="names">#42 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=eric+hartman+2026+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>eric hartman 2026 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/800909352851?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=itemba79eadf93:g:WEwAAeSwnLFq9hqG" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="sum-title">2025 Bowman Draft Chrome GAGE WOOD #BDC-4 1st Bowman</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.24</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/huAAAeSwBWdq93Ow/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Chrome GAGE WOOD #BDC-4 1st Bowman</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.24</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$2.38 (2)</dd></div>
+      </dl>
+      <p class="names">#33 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=gage+wood+2025+bowman+chrome+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>gage wood 2025 bowman chrome draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/117519718729?_skw=%28Ralphy+Velazquez%2C+Gage+Wood%2C+Christian+Zazueta%2C+Thomas+White%29&amp;hash=item1b5cb89949:g:huAAAeSwBWdq93Ow" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="sum-title">2025 Bowman Draft Tyler Bremner Chrome Los Angeles Angels #BDC-37 1st RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$2.77</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/2RgAAeSwXDNqsuKg/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Tyler Bremner Chrome Los Angeles Angels #BDC-37 1st RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.99</dd></div>
+        <div><dt>Shipping</dt><dd>$0.78</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#46 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=tyler+bremner+2025+bowman+chrome+draft+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>tyler bremner 2025 bowman chrome draft 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/137926061259?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item201d08accb:g:2RgAAeSwXDNqsuKg" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="sum-title">Tyler Bremner 1st Bowman Chrome BDC-37 (RC) 2025 Angels</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/-D4AAeSwPXdq90fm/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 44</span><span class="when">Buy It Now</span></div>
+          <h3>Tyler Bremner 1st Bowman Chrome BDC-37 (RC) 2025 Angels</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl>
+      <p class="names">#46 prospect · 1st Bowman · RC</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=tyler+bremner+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>tyler bremner 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/920139777432?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=itemd63c9ac598:g:-D4AAeSwPXdq90fm" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 42</span><span class="sum-title">Bowman 2025 Draft Chrome Refractor Anthony Eyanson Red Sox RC 1st #BDC-116</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.30</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/PYsAAeSwDoxq9Tes/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 42</span><span class="when">Buy It Now</span></div>
+          <h3>Bowman 2025 Draft Chrome Refractor Anthony Eyanson Red Sox RC 1st #BDC-116</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.30</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#49 prospect · 1st Bowman · RC · Refractor</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=anthony+eyanson+2025+bowman+1st+refractor&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>anthony eyanson 2025 bowman 1st refractor</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/336893262644?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item4e70673b34:g:PYsAAeSwDoxq9Tes" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 41</span><span class="sum-title">🔥⚾️Topps 2025 Bowman Chrome 1st Bowman Thomas White Marlins BCP-69⚾️🔥</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/TycAAeSwUipq9l8Y/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 41</span><span class="when">Buy It Now</span></div>
+          <h3>🔥⚾️Topps 2025 Bowman Chrome 1st Bowman Thomas White Marlins BCP-69⚾️🔥</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$4.22 (1)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#37 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=thomas+white+2025+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>thomas white 2025 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/840122720018?_skw=%28Ralphy+Velazquez%2C+Gage+Wood%2C+Christian+Zazueta%2C+Thomas+White%29&amp;hash=itemc39b375f12:g:TycAAeSwUipq9l8Y" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 40</span><span class="sum-title">2024 Bowman #BP-142 Arjun Nimmala 1st Bowman</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$1.75</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/KnMAAeSwCCBq98GR/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 40</span><span class="when">Buy It Now</span></div>
+          <h3>2024 Bowman #BP-142 Arjun Nimmala 1st Bowman</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.75</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Typical ask</dt><dd>$2.50 (3)</dd></div>
+      </dl>
+      <p class="names">#38 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=arjun+nimmala+2024+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>arjun nimmala 2024 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/137929116541?_skw=%28Arjun+Nimmala%2C+Josiah+Hartshorn%2C+Eric+Booth+Jr%2C+Eric+Booth%2C+Drew+Burress%29&amp;hash=item201d374b7d:g:KnMAAeSwCCBq98GR" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 40</span><span class="sum-title">2024 Bowman Chrome Arjun Nimmala 1st Bowman #BCP-142 Toronto Blue Jays</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/V00AAeSwjPtq-CCJ/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 40</span><span class="when">Buy It Now</span></div>
+          <h3>2024 Bowman Chrome Arjun Nimmala 1st Bowman #BCP-142 Toronto Blue Jays</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>$5.00 (1)</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#38 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=arjun+nimmala+2024+bowman+chrome+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>arjun nimmala 2024 bowman chrome 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/860143217053?_skw=%28Arjun+Nimmala%2C+Josiah+Hartshorn%2C+Eric+Booth+Jr%2C+Eric+Booth%2C+Drew+Burress%29&amp;hash=itemc84487e99d:g:V00AAeSwjPtq-CCJ" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 39</span><span class="sum-title">Topps 2025 Bowman Draft Chrome Tyler Bremner 1st Bowman Mojo Refractor #BDC-37</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$1.75</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/mccAAeSwDoxq-JjV/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 39</span><span class="when">Buy It Now</span></div>
+          <h3>Topps 2025 Bowman Draft Chrome Tyler Bremner 1st Bowman Mojo Refractor #BDC-37</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.75</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Typical ask</dt><dd>not enough yet</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">#46 prospect · 1st Bowman · Mojo Refractor</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=tyler+bremner+2025+bowman+chrome+draft+1st+mojo+refractor&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>tyler bremner 2025 bowman chrome draft 1st mojo refractor</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/366810047712?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item55679524e0:g:mccAAeSwDoxq-JjV" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge rec">Cheap 1st Bowman · score 37</span><span class="sum-title">(2) 2026 Bowman Eric Hartman 1st Paper Prospects BP-102 Atlanta Braves</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/PfsAAeSwxl5qsIiw/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge rec">Cheap 1st Bowman · score 37</span><span class="when">Buy It Now</span></div>
+          <h3>(2) 2026 Bowman Eric Hartman 1st Paper Prospects BP-102 Atlanta Braves</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.50</dd></div>
+        <div><dt>Typical ask</dt><dd>$2.65 (7)</dd></div>
+      </dl>
+      <p class="names">#42 prospect · 1st Bowman</p><p class="lookup">Check sold prices: <a href="https://www.ebay.com/sch/i.html?_nkw=eric+hartman+2026+bowman+1st&amp;LH_Sold=1&amp;LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://130point.com/sales/" target="_blank" rel="noopener">130point</a> · <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener">PSA prices</a><br><span class="muted">search for: <code>eric hartman 2026 bowman 1st</code></span></p>
+          <a class="btn" href="https://www.ebay.com/itm/117423032907?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item1b56f54a4b:g:PfsAAeSwxl5qsIiw" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    </details>
+  </section>
+  <section class="tab" id="tab-cheap-lots" data-tab-id="cheap-lots" data-count="30">
+    <details class="sec" open>
+      <summary><h2>Cheap 1st &amp; RC lots (30)</h2></summary>
+      <p class="muted intro">Lots that cost about $1 or less per card (price + shipping), name at least one of your prospects (the other cards can be anyone), and mention 1st or RC cards. Ranked by 1sts first, then RCs, then how many prospects and how highly ranked. No phone alerts.</p>
+      
+    <details class="item" open>
+      <summary><span class="badge good">1st + RC lot · $0.78/card · score 84</span><span class="sum-title">2024 Bowman Draft Theo Gillen 1st Prospect RC Lot (24) #BD-73 Tampa Rays</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$18.73</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/UUEAAeSwSg9qqqqv/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st + RC lot · $0.78/card · score 84</span><span class="when">Buy It Now</span></div>
+          <h3>2024 Bowman Draft Theo Gillen 1st Prospect RC Lot (24) #BD-73 Tampa Rays</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$12.74</dd></div>
+        <div><dt>Shipping</dt><dd>$5.99</dd></div>
+        <div><dt>Cards</dt><dd>24</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.78</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.99</dd></div>
+      </dl>
+      <p class="names">Prospects named: #12 Theo Gillen</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Theo Gillen 2024 Bowman Draft 1st</td><td>24 (3 valued)</td><td>$2.00</td><td class="muted">low ask, player&#x27;s base cards (60)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/117415479389?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item1b5682085d:g:UUEAAeSwSg9qqqqv" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st + RC lot · $1.00/card · score 81</span><span class="sum-title">Twins Lot 14 Cards Walker Jenkins 1st Bowman Culpepper Keaschall RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$13.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/9VEAAeSw4BFq6KYa/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st + RC lot · $1.00/card · score 81</span><span class="when">Buy It Now</span></div>
+          <h3>Twins Lot 14 Cards Walker Jenkins 1st Bowman Culpepper Keaschall RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$13.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>14</dd></div>
+        <div><dt>Per card</dt><dd class="good">$1.00</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.97</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #15 Walker Jenkins</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Walker Jenkins Bowman 1st</td><td>14 (3 valued)</td><td>$1.99</td><td class="muted">low ask, player&#x27;s base cards (133)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/227594139423?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=item34fdaaf71f:g:9VEAAeSw4BFq6KYa" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.71/card · score 76</span><span class="sum-title">2025 Bowman Draft Chrome 35 Card Lot - Mojo Laser Bowman 1st &amp; Kade Anderson</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$25.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/eC4AAeSwFMJq87BQ/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.71/card · score 76</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Chrome 35 Card Lot - Mojo Laser Bowman 1st &amp; Kade Anderson</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$25.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>35</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.71</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.19</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #5 Kade Anderson</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2025 Bowman Chrome Draft 1st Mojo</td><td>35 (3 valued)</td><td>$2.40</td><td class="muted">low ask, player&#x27;s base cards (103)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/206690686073?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item301fb99479:g:eC4AAeSwFMJq87BQ" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.95/card · score 76</span><span class="sum-title">Kade Anderson Lot 10 Cards 2025 Bowman Draft Paper 1st Bowman x9</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$9.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/GIEAAeSw15Bq6Kix/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.95/card · score 76</span><span class="when">Buy It Now</span></div>
+          <h3>Kade Anderson Lot 10 Cards 2025 Bowman Draft Paper 1st Bowman x9</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$9.49</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>10</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.95</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.19</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #5 Kade Anderson</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2025 Bowman Draft 1st</td><td>10 (3 valued)</td><td>$2.40</td><td class="muted">low ask, player&#x27;s base cards (103)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/227594152277?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item34fdab2955:g:GIEAAeSw15Bq6Kix" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.61/card · score 73</span><span class="sum-title">Lot (x7) 2024 Bowman Draft Paper Ryan Sloan 1st Bowman Seattle Mariners #BD-99</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.25</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/pe4AAeSwf9Nq8mNQ/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.61/card · score 73</span><span class="when">Buy It Now</span></div>
+          <h3>Lot (x7) 2024 Bowman Draft Paper Ryan Sloan 1st Bowman Seattle Mariners #BD-99</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.25</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Cards</dt><dd>7</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.61</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.31</dd></div>
+      </dl>
+      <p class="names">Prospects named: #8 Ryan Sloan</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Ryan Sloan 2024 Bowman Draft 1st</td><td>7 (3 valued)</td><td>$2.44</td><td class="muted">low ask, player&#x27;s base cards (40)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/287717389157?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item42fd4af365:g:pe4AAeSwf9Nq8mNQ" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.83/card · score 72</span><span class="sum-title">Seong-Jun Kim 1st Bowman 6 Card Lot 2026 Chrome Mojo Rangers Sebastian Walcott</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/AiQAAeSwMstq7S-6/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.83/card · score 72</span><span class="when">Buy It Now</span></div>
+          <h3>Seong-Jun Kim 1st Bowman 6 Card Lot 2026 Chrome Mojo Rangers Sebastian Walcott</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>6</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.83</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.50</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #9 Sebastian Walcott</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Sebastian Walcott 2026 Bowman 1st Mojo</td><td>6 (3 valued)</td><td>$2.17</td><td class="muted">low ask, player&#x27;s base cards (147)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168842277896?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item274fc8b408:g:AiQAAeSwMstq7S-6" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.40/card · score 69</span><span class="sum-title">Topps 2024 Bowman Chrome 1st Bowman 24 Card Lot Colt Emerson Theo Gillen</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$9.50</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/f4kAAeSw3C1qejVv/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.40/card · score 69</span><span class="when">Buy It Now</span></div>
+          <h3>Topps 2024 Bowman Chrome 1st Bowman 24 Card Lot Colt Emerson Theo Gillen</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$9.50</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>24</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.40</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.99</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #12 Theo Gillen</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Theo Gillen 2024 Bowman Chrome 1st</td><td>24 (3 valued)</td><td>$2.00</td><td class="muted">low ask, player&#x27;s base cards (60)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/377408686900?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item57df4f8b34:g:f4kAAeSw3C1qejVv" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.64/card · score 69</span><span class="sum-title">Theo Gillen Lot 2024 Bowman Draft 1st #BD-73 Tampa Bay Rays (14 Cards)</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$8.94</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/xeMAAeSwqR9qn5PN/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.64/card · score 69</span><span class="when">Buy It Now</span></div>
+          <h3>Theo Gillen Lot 2024 Bowman Draft 1st #BD-73 Tampa Bay Rays (14 Cards)</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$8.94</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Cards</dt><dd>14</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.64</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.99</dd></div>
+      </dl>
+      <p class="names">Prospects named: #12 Theo Gillen</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Theo Gillen 2024 Bowman Draft 1st</td><td>14 (3 valued)</td><td>$2.00</td><td class="muted">low ask, player&#x27;s base cards (60)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/366655530718?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item555e5f66de:g:xeMAAeSwqR9qn5PN" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.75/card · score 69</span><span class="sum-title">Lot (x8) 2024 Bowman Draft Theo Gillen 1st Bowman Paper  #BD-73 Tampa Bay Rays</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$6.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/NxcAAeSw14tq7n3f/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.75/card · score 69</span><span class="when">Buy It Now</span></div>
+          <h3>Lot (x8) 2024 Bowman Draft Theo Gillen 1st Bowman Paper  #BD-73 Tampa Bay Rays</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$6.00</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Cards</dt><dd>8</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.75</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.99</dd></div>
+      </dl>
+      <p class="names">Prospects named: #12 Theo Gillen</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Theo Gillen 2024 Bowman Draft 1st</td><td>8 (3 valued)</td><td>$2.00</td><td class="muted">low ask, player&#x27;s base cards (60)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/287710583220?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item42fce319b4:g:NxcAAeSw14tq7n3f" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.70/card · score 68</span><span class="sum-title">Bowman Chrome 10 Card Prospect Lot Dodgers Max Clark VIP 1st Bowman Refractors</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$6.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/RC0AAeSwyLdq1pK0/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.70/card · score 68</span><span class="when">Buy It Now</span></div>
+          <h3>Bowman Chrome 10 Card Prospect Lot Dodgers Max Clark VIP 1st Bowman Refractors</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$6.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>10</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.70</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.27</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #13 Max Clark</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Max Clark Bowman Chrome 1st Refractor</td><td>10 (3 valued)</td><td>$2.09</td><td class="muted">low ask, player&#x27;s base cards (173)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/880032563376?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=itemcce60740b0:g:RC0AAeSwyLdq1pK0" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.71/card · score 68</span><span class="sum-title">2024 Bowman Chrome Prospects 19 Card Lot Max Clark 1st Bowman 2 Mojo</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$13.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/hGAAAeSwqn9qk4cm/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.71/card · score 68</span><span class="when">Buy It Now</span></div>
+          <h3>2024 Bowman Chrome Prospects 19 Card Lot Max Clark 1st Bowman 2 Mojo</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$13.49</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>19</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.71</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.27</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #13 Max Clark</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Max Clark 2024 Bowman Chrome 1st Mojo</td><td>19 (3 valued)</td><td>$2.09</td><td class="muted">low ask, player&#x27;s base cards (173)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/840073162045?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=itemc398432d3d:g:hGAAAeSwqn9qk4cm" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.74/card · score 66</span><span class="sum-title">Twins Walker Jenkins /299 Kaelen Culpepper /150 Kyle DeBarge 1st Mojo 22 Cards</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$16.25</span></summary>
+      <article class="card auction">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/9BkAAeSwQJpqNfw-/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.74/card · score 66</span><span class="when">AUCTION, 0 bids, ends in 0.2h (price will rise)</span></div>
+          <h3>Twins Walker Jenkins /299 Kaelen Culpepper /150 Kyle DeBarge 1st Mojo 22 Cards</h3>
+      <dl class="stats">
+        <div><dt>Current bid</dt><dd>$6.50</dd></div>
+        <div><dt>Shipping</dt><dd>$9.75</dd></div>
+        <div><dt>Cards</dt><dd>22</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.74</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.97</dd></div>
+      </dl>
+      <p class="names">Prospects named: #15 Walker Jenkins</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Walker Jenkins 1st Mojo /299</td><td>22 (3 valued)</td><td>$1.99</td><td class="muted">low ask, player&#x27;s base cards (133)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/940073864467?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=itemdae0c4cd13:g:9BkAAeSwQJpqNfw-" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.83/card · score 66</span><span class="sum-title">2026 Bowman Chrome Marek Houston 1st BCP-16 Twins 6 Card Lot Walker Jenkins Mojo</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$4.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/894AAeSwjN5q6QSp/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.83/card · score 66</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Chrome Marek Houston 1st BCP-16 Twins 6 Card Lot Walker Jenkins Mojo</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>6</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.83</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.97</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #15 Walker Jenkins</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Walker Jenkins 2026 Bowman Chrome 1st Mojo</td><td>6 (3 valued)</td><td>$1.99</td><td class="muted">low ask, player&#x27;s base cards (133)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168833444474?_skw=%28Max+Clark%2C+Walker+Jenkins%2C+Mike+Sirota%2C+Josuar+Gonzalez%29&amp;hash=item274f41ea7a:g:894AAeSwjN5q6QSp" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st + RC lot · $1.00/card · score 66</span><span class="sum-title">Bowman Chrome Prospect Caleb Bonemer RC Rookie Lot Of 15 Inserts 1st Refractors</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$14.95</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/92wAAeSwf1FqOXcz/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st + RC lot · $1.00/card · score 66</span><span class="when">Buy It Now</span></div>
+          <h3>Bowman Chrome Prospect Caleb Bonemer RC Rookie Lot Of 15 Inserts 1st Refractors</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$14.95</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>15</dd></div>
+        <div><dt>Per card</dt><dd class="good">$1.00</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.32</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #30 Caleb Bonemer</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Caleb Bonemer Bowman Chrome 1st Refractor</td><td>15 (3 valued)</td><td>$2.44</td><td class="muted">low ask, player&#x27;s base cards (64)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/236892472668?_skw=%28Luis+Hernandez%2C+Angel+Genao%2C+Caleb+Bonemer%2C+Jackson+Flora%29&amp;hash=item3727e4455c:g:92wAAeSwf1FqOXcz" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.40/card · score 65</span><span class="sum-title">2025 2026 Topps Bowman Brewers 30 Card Lot Chourio Yelich Durbin RC Jesus Made</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$11.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/wvkAAeSwfjFq3rZL/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.40/card · score 65</span><span class="when">Buy It Now</span></div>
+          <h3>2025 2026 Topps Bowman Brewers 30 Card Lot Chourio Yelich Durbin RC Jesus Made</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$11.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Cards</dt><dd>30</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.40</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$22.84</dd></div>
+      </dl>
+      <p class="names">Prospects named: #1 Jesus Made</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jesus Made 2025 Bowman</td><td>30 (3 valued)</td><td>$7.62</td><td class="muted">low ask of 10</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/227583628727?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item34fd0a95b7:g:wvkAAeSwfjFq3rZL" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.64/card · score 65</span><span class="sum-title">Milwaukee Brewers 94 Card Lot Misiorowski RC Chourio Yelich Jesus Made Mojo</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$60.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/-HIAAeSweLBq936N/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.64/card · score 65</span><span class="when">Buy It Now</span></div>
+          <h3>Milwaukee Brewers 94 Card Lot Misiorowski RC Chourio Yelich Jesus Made Mojo</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$60.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>94</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.64</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.09</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #1 Jesus Made</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jesus Made Mojo</td><td>94 (3 valued)</td><td>$2.03</td><td class="muted">low ask, player&#x27;s base cards (197)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/336896294859?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item4e70957fcb:g:-HIAAeSweLBq936N" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.67/card · score 65</span><span class="sum-title">Milwaukee Brewers 69 Card Lot Bowman Chrome Jesus Made Chourio Yount RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$45.98</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/HFcAAeSwzytq7RmU/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.67/card · score 65</span><span class="when">Buy It Now</span></div>
+          <h3>Milwaukee Brewers 69 Card Lot Bowman Chrome Jesus Made Chourio Yount RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$39.99</dd></div>
+        <div><dt>Shipping</dt><dd>$5.99</dd></div>
+        <div><dt>Cards</dt><dd>69</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.67</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.09</dd></div>
+      </dl>
+      <p class="names">Prospects named: #1 Jesus Made</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jesus Made Bowman Chrome</td><td>69 (3 valued)</td><td>$2.03</td><td class="muted">low ask, player&#x27;s base cards (197)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/257837628756?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item3c0851fd54:g:HFcAAeSwzytq7RmU" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $1.00/card · score 65</span><span class="sum-title">2026 Prizm Baseball 10 Card Lot Konnor Griffin Fireworks Jesus Made Red Wave RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$9.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/cPYAAeSwN7lq4vIE/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $1.00/card · score 65</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Prizm Baseball 10 Card Lot Konnor Griffin Fireworks Jesus Made Red Wave RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$9.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>10</dd></div>
+        <div><dt>Per card</dt><dd class="good">$1.00</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.09</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #1 Jesus Made</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jesus Made 2026 Red</td><td>10 (3 valued)</td><td>$2.03</td><td class="muted">low ask, player&#x27;s base cards (197)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/237150132773?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item37373fda25:g:cPYAAeSwN7lq4vIE" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.85/card · score 64</span><span class="sum-title">Athletics 24 Card Lot Logan Sauve Johenssy Colome Leo De Vries Nick Kurtz RC</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$20.48</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/GfUAAeSwSulq7jJj/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.85/card · score 64</span><span class="when">Buy It Now</span></div>
+          <h3>Athletics 24 Card Lot Logan Sauve Johenssy Colome Leo De Vries Nick Kurtz RC</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$14.49</dd></div>
+        <div><dt>Shipping</dt><dd>$5.99</dd></div>
+        <div><dt>Cards</dt><dd>24</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.85</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.26</dd></div>
+      </dl>
+      <p class="names">Prospects named: #2 Leo De Vries</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Leo De Vries</td><td>24 (3 valued)</td><td>$2.09</td><td class="muted">low ask, player&#x27;s base cards (256)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/920113151222?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=itemd63b047cf6:g:GfUAAeSwSulq7jJj" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $1.00/card · score 61</span><span class="sum-title">2026 Bowman Cole Young #78 Chrome Mojo SP Refractor (RC) LOT of 6 Kade Anderson</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/NYkAAeSwZ3Nq1Sg4/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $1.00/card · score 61</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Cole Young #78 Chrome Mojo SP Refractor (RC) LOT of 6 Kade Anderson</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.99</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Cards</dt><dd>6</dd></div>
+        <div><dt>Per card</dt><dd class="good">$1.00</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.19</dd></div>
+      </dl>
+      <p class="names">Prospects named: #5 Kade Anderson</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2026 Bowman Mojo Refractor</td><td>6 (3 valued)</td><td>$2.40</td><td class="muted">low ask, player&#x27;s base cards (103)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168801520628?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item274d5acbf4:g:NYkAAeSwZ3Nq1Sg4" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $1.00/card · score 61</span><span class="sum-title">2026 Bowman Cole Young #78 Chrome Mojo SP Refractor (RC) LOT of 7 Kade Anderson</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$6.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/tcAAAeSwt1Zq1SZz/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $1.00/card · score 61</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Cole Young #78 Chrome Mojo SP Refractor (RC) LOT of 7 Kade Anderson</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$6.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>7</dd></div>
+        <div><dt>Per card</dt><dd class="good">$1.00</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$7.19</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #5 Kade Anderson</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2026 Bowman Mojo Refractor</td><td>7 (3 valued)</td><td>$2.40</td><td class="muted">low ask, player&#x27;s base cards (103)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168801517001?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item274d5abdc9:g:tcAAAeSwt1Zq1SZz" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.55/card · score 60</span><span class="sum-title">LUIS PENA 2025 2026 Bowman 1st Paper Chrome Insert LOT OF 22 Brewers</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$11.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/lN0AAeSwMixq7qDq/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.55/card · score 60</span><span class="when">Buy It Now</span></div>
+          <h3>LUIS PENA 2025 2026 Bowman 1st Paper Chrome Insert LOT OF 22 Brewers</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$11.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>22</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.55</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.47</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #21 Luis Pena</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Luis Pena 2025 Bowman 1st</td><td>22 (3 valued)</td><td>$2.16</td><td class="muted">low ask of 7</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/227602269514?_skw=%28Vahn+Lackey%2C+Luis+Pena%2C+Ethan+Salas%2C+Emil+Morales%29&amp;hash=item34fe27054a:g:lN0AAeSwMixq7qDq" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.63/card · score 60</span><span class="sum-title">50 Card lot of 2025 Bowman Prospects Luis Pena #BP-38 First 1st</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$31.48</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/KYAAAeSwr9JqwRlu/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.63/card · score 60</span><span class="when">Buy It Now</span></div>
+          <h3>50 Card lot of 2025 Bowman Prospects Luis Pena #BP-38 First 1st</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$24.99</dd></div>
+        <div><dt>Shipping</dt><dd>$6.49</dd></div>
+        <div><dt>Cards</dt><dd>50</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.63</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.47</dd></div>
+      </dl>
+      <p class="names">Prospects named: #21 Luis Pena</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Luis Pena 2025 Bowman 1st</td><td>50 (3 valued)</td><td>$2.16</td><td class="muted">low ask of 7</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/287624274207?_skw=%28Vahn+Lackey%2C+Luis+Pena%2C+Ethan+Salas%2C+Emil+Morales%29&amp;hash=item42f7be211f:g:KYAAAeSwr9JqwRlu" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st lot · $0.99/card · score 60</span><span class="sum-title">2025 1st Bowman/Bowman Chrome Prospect Luis Pena BP-38/BCP-38 (12) Card Lot</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$11.86</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/eiEAAeSw5Ntq6k3f/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st lot · $0.99/card · score 60</span><span class="when">Buy It Now</span></div>
+          <h3>2025 1st Bowman/Bowman Chrome Prospect Luis Pena BP-38/BCP-38 (12) Card Lot</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$10.50</dd></div>
+        <div><dt>Shipping</dt><dd>$1.36</dd></div>
+        <div><dt>Cards</dt><dd>12</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.99</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.97</dd></div>
+      </dl>
+      <p class="names">Prospects named: #21 Luis Pena</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Luis Pena 2025 Bowman Chrome 1st</td><td>12 (3 valued)</td><td>$1.99</td><td class="muted">low ask, player&#x27;s base cards (76)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/287702725905?_skw=%28Vahn+Lackey%2C+Luis+Pena%2C+Ethan+Salas%2C+Emil+Morales%29&amp;hash=item42fc6b3511:g:eiEAAeSw5Ntq6k3f" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">1st + RC lot · $0.32/card · score 59</span><span class="sum-title">Thomas white Rc 30 card mixed lot🔥🔥🔥w 1st rc + rookies</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$9.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/Yx4AAeSwQR5qpEPB/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">1st + RC lot · $0.32/card · score 59</span><span class="when">Buy It Now</span></div>
+          <h3>Thomas white Rc 30 card mixed lot🔥🔥🔥w 1st rc + rookies</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$4.99</dd></div>
+        <div><dt>Shipping</dt><dd>$4.50</dd></div>
+        <div><dt>Cards</dt><dd>30</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.32</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$5.97</dd></div>
+      </dl>
+      <p class="names">Prospects named: #37 Thomas White</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Thomas White 1st</td><td>30 (3 valued)</td><td>$1.99</td><td class="muted">low ask, player&#x27;s base cards (88)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168681357871?_skw=%28Ralphy+Velazquez%2C+Gage+Wood%2C+Christian+Zazueta%2C+Thomas+White%29&amp;hash=item274631422f:g:Yx4AAeSwQR5qpEPB" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.92/card · score 59</span><span class="sum-title">2026 Bowman Chrome Pirates Lot 13 Paul Skenes Konnor Griffin RC Seth Hernandez</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$11.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/dx0AAeSwqK9q5kVu/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.92/card · score 59</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman Chrome Pirates Lot 13 Paul Skenes Konnor Griffin RC Seth Hernandez</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$11.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>13</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.92</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$8.97</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #7 Seth Hernandez</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Seth Hernandez 2026 Bowman Chrome</td><td>13 (3 valued)</td><td>$2.99</td><td class="muted">low ask of 19</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/900054609741?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=itemd18f6f6f4d:g:dx0AAeSwqK9q5kVu" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.70/card · score 57</span><span class="sum-title">2026 Bowman #BP-51 Sebastian Walcott Prospect RC Lot x5</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/~y8AAeSw0jpqidWM/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.70/card · score 57</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman #BP-51 Sebastian Walcott Prospect RC Lot x5</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.50</dd></div>
+        <div><dt>Cards</dt><dd>5</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.70</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.24</dd></div>
+      </dl>
+      <p class="names">Prospects named: #9 Sebastian Walcott</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Sebastian Walcott 2026 Bowman</td><td>5 (3 valued)</td><td>$2.08</td><td class="muted">low ask of 24</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/158214704726?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item24d654ce56:g:~y8AAeSw0jpqidWM" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.92/card · score 57</span><span class="sum-title">Sebastian Walcott Panini-Donruss Prizm/Optic Insert Rookie Lot (9) NICE!⚾️</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$8.27</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/~d4AAeSwTvhpucUF/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.92/card · score 57</span><span class="when">Buy It Now</span></div>
+          <h3>Sebastian Walcott Panini-Donruss Prizm/Optic Insert Rookie Lot (9) NICE!⚾️</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.78</dd></div>
+        <div><dt>Shipping</dt><dd>$5.49</dd></div>
+        <div><dt>Cards</dt><dd>9</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.92</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.50</dd></div>
+      </dl>
+      <p class="names">Prospects named: #9 Sebastian Walcott</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Sebastian Walcott</td><td>9 (3 valued)</td><td>$2.17</td><td class="muted">low ask, player&#x27;s base cards (147)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/168850847018?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item27504b752a:g:~d4AAeSwTvhpucUF" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.86/card · score 55</span><span class="sum-title">7-Card Baseball Lot Barry Bonds + Roch Cholowsky + Yilber Diaz RC + Walker</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/la4AAeSwnflp9ARX/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.86/card · score 55</span><span class="when">Buy It Now</span></div>
+          <h3>7-Card Baseball Lot Barry Bonds + Roch Cholowsky + Yilber Diaz RC + Walker</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.99</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Cards</dt><dd>7</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.86</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$6.27</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <p class="names">Prospects named: #11 Roch Cholowsky</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Roch Cholowsky</td><td>7 (3 valued)</td><td>$2.09</td><td class="muted">low ask, player&#x27;s base cards (19)</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/188809273814?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item2bf5e8e1d6:g:la4AAeSwnflp9ARX" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge good">RC lot · $0.70/card · score 54</span><span class="sum-title">2026 Bowman #BP-20 Theo Gillen Prospect RC Lot x5</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.49</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/YB4AAeSw9fJqidnI/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge good">RC lot · $0.70/card · score 54</span><span class="when">Buy It Now</span></div>
+          <h3>2026 Bowman #BP-20 Theo Gillen Prospect RC Lot x5</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$1.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.50</dd></div>
+        <div><dt>Cards</dt><dd>5</dd></div>
+        <div><dt>Per card</dt><dd class="good">$0.70</dd></div>
+        <div><dt>Singles value (est.)</dt><dd>$3.90</dd></div>
+      </dl>
+      <p class="names">Prospects named: #12 Theo Gillen</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Theo Gillen 2026 Bowman</td><td>5 (3 valued)</td><td>$1.30</td><td class="muted">low ask of 5</td></tr></table>
+      <p class="names muted">Read from the title (full description not checked yet).
+      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>
+          <a class="btn" href="https://www.ebay.com/itm/158214704722?_skw=%28Sebastian+Walcott%2C+Grady+Emerson%2C+Roch+Cholowsky%2C+Theo+Gillen%29&amp;hash=item24d654ce52:g:YB4AAeSw9fJqidnI" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    </details>
+  </section>
+  <section class="tab" id="tab-lots-vs-singles" data-tab-id="lots-vs-singles" data-count="7">
+    <details class="sec" open>
+      <summary><h2>Lots vs. singles (7)</h2></summary>
+      <p class="muted intro">Each card in the lot is priced like a single (sold comps first, then asking prices), using the seller's description. Shown when the lot costs 30%+ less than its singles; a green badge means reselling the singles should also make $10+, and only those send phone alerts.</p>
+      
+    <details class="item" open>
+      <summary><span class="badge">lot · 79% under singles · no resale profit</span><span class="sum-title">2025 Bowman Draft Paper Tyler Bremner Los Angeles Angels #BD-37 5 Card Lot</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$3.74</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/2jMAAeSwSytqluaW/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 79% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Paper Tyler Bremner Los Angeles Angels #BD-37 5 Card Lot</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.74</dd></div>
+        <div><dt>Shipping</dt><dd>Free</dd></div>
+        <div><dt>Singles value</dt><dd>$18.15</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$7.51</dd></div>
+      </dl>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Tyler Bremner 2025 Bowman Draft</td><td>5 (3 valued)</td><td>$6.05</td><td class="muted">low ask of 9</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/206529136305?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item30161886b1:g:2jMAAeSwSytqluaW" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 72% under singles · no resale profit</span><span class="sum-title">2025 Bowman Draft Paper Kade Anderson Mariners #BD-3 5 Card Lot</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$5.35</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/wysAAeSwRONq3WoC/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 72% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>2025 Bowman Draft Paper Kade Anderson Mariners #BD-3 5 Card Lot</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$3.99</dd></div>
+        <div><dt>Shipping</dt><dd>$1.36</dd></div>
+        <div><dt>Singles value</dt><dd>$18.83</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$6.49</dd></div>
+      </dl>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2025 Bowman Draft</td><td>5 (3 valued)</td><td>$6.28</td><td class="muted">low ask of 14</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/206651823763?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=item301d689693:g:wysAAeSwRONq3WoC" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 65% under singles · no resale profit</span><span class="sum-title">2025-26 Bowman 5-card Jesus Made Prospect Lot</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$7.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/2osAAeSwoVlq3jVK/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 65% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>2025-26 Bowman 5-card Jesus Made Prospect Lot</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$5.00</dd></div>
+        <div><dt>Shipping</dt><dd>$2.99</dd></div>
+        <div><dt>Singles value</dt><dd>$22.84</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$7.33</dd></div>
+      </dl>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jesus Made 2025 Bowman</td><td>5 (3 valued)</td><td>$7.62</td><td class="muted">low ask of 10</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/366760646400?_skw=%28Jesus+Made%2C+Leo+De+Vries%2C+Leo+DeVries%2C+Franklin+Arias%2C+Eli+Willits%29&amp;hash=item5564a35700:g:2osAAeSwoVlq3jVK" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 52% under singles · no resale profit</span><span class="sum-title">KADE ANDERSON - 6 Card Lot - 2025 Bowman Draft - Seattle Mariners</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$9.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/9qwAAeSwgyhq7IdH/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 52% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>KADE ANDERSON - 6 Card Lot - 2025 Bowman Draft - Seattle Mariners</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$9.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Singles value</dt><dd>$18.83</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$2.84</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Kade Anderson 2025 Bowman Draft</td><td>6 (3 valued)</td><td>$6.28</td><td class="muted">low ask of 14</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/880085763477?_skw=%28Kade+Anderson%2C+Josue+De+Paula%2C+Josue+DePaula%2C+Seth+Hernandez%2C+Ryan+Sloan%29&amp;hash=itemcce9330595:g:9qwAAeSwgyhq7IdH" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 51% under singles · no resale profit</span><span class="sum-title">6P580 2025 Bowman Draft BD-37 Tyler Bremner Los Angeles Angels - Lot x10</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$8.98</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/zMIAAeSw8KJqVCVF/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 51% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>6P580 2025 Bowman Draft BD-37 Tyler Bremner Los Angeles Angels - Lot x10</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$2.99</dd></div>
+        <div><dt>Shipping</dt><dd>$5.99</dd></div>
+        <div><dt>Singles value</dt><dd>$18.15</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$2.27</dd></div>
+      </dl>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Tyler Bremner 2025 Bowman Draft</td><td>10 (3 valued)</td><td>$6.05</td><td class="muted">low ask of 9</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/127997635176?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=item1dcd40ea68:g:zMIAAeSw8KJqVCVF" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 49% under singles · no resale profit</span><span class="sum-title">JHONNY LEVEL Lot Of 7 2025 Bowman Chrome Paper &amp; Inserts San Francisco Giants</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$10.00</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/xpIAAeSwgyBqwqmP/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 49% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>JHONNY LEVEL Lot Of 7 2025 Bowman Chrome Paper &amp; Inserts San Francisco Giants</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$10.00</dd></div>
+        <div><dt>Shipping</dt><dd>not listed</dd></div>
+        <div><dt>Singles value</dt><dd>$19.71</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$2.60</dd></div>
+      </dl><p class="warn">Shipping isn't listed in search results, so the numbers below assume free shipping. Check the listing for the real cost.</p>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Jhonny Level 2025 Bowman Chrome</td><td>7 (3 valued)</td><td>$6.57</td><td class="muted">low ask of 8</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/800757584352?_skw=%28Eric+Hartman%2C+Tyler+Bremner%2C+Jhonny+Level%2C+Anthony+Eyanson%29&amp;hash=itemba70df11e0:g:xpIAAeSwgyBqwqmP" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    <details class="item" open>
+      <summary><span class="badge">lot · 38% under singles · no resale profit</span><span class="sum-title">Luis Pena Brewers Lot of (2) 2025 Bowman Chrome Rookie Reptilian Refractors</span>
+        <span class="sum-hint muted">Collapse</span>
+        <span class="sum-price">$14.99</span></summary>
+      <article class="card">
+        <div class="photo"><img src="https://i.ebayimg.com/images/g/JDEAAeSw6kNq68Oe/s-l225.jpg" alt="" loading="lazy"></div>
+        <div class="info">
+          <div class="top"><span class="badge">lot · 38% under singles · no resale profit</span><span class="when">Buy It Now</span></div>
+          <h3>Luis Pena Brewers Lot of (2) 2025 Bowman Chrome Rookie Reptilian Refractors</h3>
+      <dl class="stats">
+        <div><dt>Price</dt><dd>$9.99</dd></div>
+        <div><dt>Shipping</dt><dd>$5.00</dd></div>
+        <div><dt>Singles value</dt><dd>$24.28</dd></div>
+        <div><dt>Est. profit (sell singles)</dt><dd class="good">$3.07</dd></div>
+      </dl>
+      <table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th><th>Source</th></tr><tr><td>Luis Pena 2025 Bowman Chrome Refractor</td><td>2</td><td>$12.14</td><td class="muted">low ask of 5</td></tr></table>
+      <p class="names muted">Cards read from the title (full description not checked yet).
+      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
+      Check the photos: the cards may be a cheaper version than described.</p>
+          <a class="btn" href="https://www.ebay.com/itm/377622372549?_skw=%28Vahn+Lackey%2C+Luis+Pena%2C+Ethan+Salas%2C+Emil+Morales%29&amp;hash=item57ec0c20c5:g:JDEAAeSw6kNq68Oe" target="_blank" rel="noopener">View on eBay</a>
+        </div>
+      </article>
+    </details>
+    </details>
+  </section>
+    <footer>
+      Prices are estimates from recent auction results and asking prices. Before buying,
+      check the photos (condition, centering, fakes), the seller's feedback, and recent sold
+      prices yourself. Auction prices will still rise before they end.
+    </footer>
+  </main>
+</div>
+<script>
+(function () {
+  var links = document.querySelectorAll('[data-tab]');
+  var sections = document.querySelectorAll('section.tab');
+  function exists(id) { return id && document.getElementById('tab-' + id); }
+  function show(id) {
+    sections.forEach(function (s) { s.hidden = (s.dataset.tabId !== id); });
+    links.forEach(function (a) { a.classList.toggle('active', a.dataset.tab === id); });
+    try { localStorage.setItem('card-scanner-tab', id); } catch (e) {}
+  }
+  links.forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      show(a.dataset.tab);
+      history.replaceState(null, '', '#' + a.dataset.tab);
+      window.scrollTo(0, 0);
+    });
+  });
+  // Which tab to open: the address (#...), else the last one used, else the first non-empty one.
+  var start = location.hash.slice(1), saved = null;
+  try { saved = localStorage.getItem('card-scanner-tab'); } catch (e) {}
+  if (!exists(start)) start = saved;
+  if (!exists(start)) {
+    start = sections[0].dataset.tabId;
+    for (var i = 0; i < sections.length; i++) {
+      if (+sections[i].dataset.count > 0) { start = sections[i].dataset.tabId; break; }
+    }
+  }
+  show(start);
+  // Expand all / Collapse all: every section and listing on the page.
+  function setAll(open) { document.querySelectorAll('main details').forEach(function (d) { d.open = open; }); }
+  document.getElementById('expand-all').addEventListener('click', function () { setAll(true); });
+  document.getElementById('collapse-all').addEventListener('click', function () { setAll(false); });
+})();
+</script>
+</body>
+</html>
