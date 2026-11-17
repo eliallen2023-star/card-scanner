@@ -305,6 +305,10 @@ def run(args):
         it["rating"] = my_ratings.get(it["item_id"])
         if it["rating"] == "bad":
             continue                                   # you said it's not for you: hide it
+        if it["buying"] == "BIN":
+            listed = parse_time(it.get("listed") or it["first_seen"])
+            if listed and (now() - listed).total_seconds() > S["max_age_hours"] * 3600:
+                continue                               # listed over 36 h ago: off the page
         s, reasons = score.score_lot(it, info, ranks)
         store.set_score(it["item_id"], s, reasons)
         if s >= S["page_min_score"]:

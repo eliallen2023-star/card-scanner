@@ -405,7 +405,8 @@ def build(path, lots, search_rows, cfg, updated, tracked, demo=False, learned=No
     sections = [
         ("top", "Lots", "Top lots", lots[:cap],
          "No lots scored high enough yet.",
-         f"Every lot found, best score first (0-100). Points come from top prospects named, "
+         f"Buy It Now lots listed in the last {S['max_age_hours']} hours and auctions ending soon, "
+         f"best score first (0-100). Points come from top prospects named, "
          f"1st Bowman / auto / numbered cards, price per card, and how fresh the listing is. "
          f"New lots scoring {S['alert_min_score']}+ send a phone alert."),
         ("new", "Lots", "New (last 24 h)", newest[:cap],
