@@ -1,0 +1,10 @@
+# Risers: players YOU think are about to get hot (a big Fall League, a promotion, a
+# ranking jump), even if they're not in prospects.yaml. Each one:
+#   * gets +8 on any lot that names them, and a "Riser" tag
+#   * gets its own eBay search every 2 hours ("lot (Name, Name, ...)")
+#   * shows on the Prospect news tab with your note
+# Edit this on GitHub (link on the Prospect news tab); the next scan uses it.
+# Format:  - {name: "First Last", note: "why", aliases: ["Other Spelling"]}   (note/aliases optional)
+
+risers:
+  - {name: "Rainiel Rodriguez", note: "Example: catcher, strong 2026 season. Replace with your own picks."}

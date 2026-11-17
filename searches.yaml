@@ -29,6 +29,7 @@ every_30_min:
   - (numbered, serial) lot bowman
   # Misspelled titles: fewer buyers find these, so they tend to sell cheaper.
   - (bowmen, bowmans, bowmon, prospeckt, propsect, 1st bowmen) lot
+  - (bowmen 1st, bowman crome, bowmen chrome, bowman chome, refracter, refractr) lot
   - (psa, bgs, sgc) lot bowman
   - (rookie, rc, rookies) lot baseball 2025
 
@@ -42,5 +43,6 @@ every_2_hours:
 # Also every 2 hours, built for you from prospects.yaml:
 #   team searches:   (Brewers, Athletics, Red Sox, Nationals) bowman lot
 #   player searches: lot (Jesus Made, Leo De Vries, Leo DeVries, ...), for the top prospects
+#   typo searches:   lot (Eli Willets, Kade Andersen, ...), from "typos:" in prospects.yaml
 team_searches: true
 player_searches: true

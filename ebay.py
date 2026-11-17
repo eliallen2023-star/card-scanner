@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import requests
 
-from store import iso, now
+from store import iso, now, parse_time
 
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
@@ -122,7 +122,14 @@ def cheapest_shipping(i):
 def simplify(i):
     """Keep just the fields we use from eBay's (large) listing record."""
     ship = cheapest_shipping(i)
-    is_auction = "AUCTION" in (i.get("buyingOptions") or [])
+    options = i.get("buyingOptions") or []
+    is_auction = "AUCTION" in options
+    # An auction that also has a Buy It Now price shows up in Buy It Now searches. Days
+    # before it ends, the current bid means little: treat it as Buy It Now at that price.
+    if is_auction and "FIXED_PRICE" in options and i.get("price"):
+        ends = parse_time(i.get("itemEndDate"))
+        if not ends or (ends - now()).total_seconds() > 12 * 3600:
+            is_auction = False
     price = _money(i.get("currentBidPrice")) if is_auction else None
     if price is None:
         price = _money(i.get("price")) or 0.0
@@ -139,6 +146,9 @@ def simplify(i):
         "bid_count": i.get("bidCount", 0) or 0,
         "end_time": i.get("itemEndDate"),
         "listed": i.get("itemCreationDate"),   # when the seller listed it
+        # both come free with every search result (no extra API call):
+        "best_offer": "BEST_OFFER" in (i.get("buyingOptions") or []),
+        "seller_feedback": (i.get("seller") or {}).get("feedbackScore"),
         "url": i.get("itemWebUrl", ""),
         "image": (i.get("image") or {}).get("imageUrl", ""),
     }

@@ -72,7 +72,8 @@ class Parser:
         for p in prospects:
             canon = norm(p["name"])
             self.names[canon] = canon
-            for a in p.get("aliases", []) or []:
+            # other spellings and common misspellings all count as this player
+            for a in (p.get("aliases") or []) + (p.get("typos") or []):
                 self.names[norm(a)] = canon
         self.exclude = [norm(w) if w.strip() == w else w.lower() for w in exclude_words]
 

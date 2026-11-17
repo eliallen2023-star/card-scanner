@@ -10,17 +10,39 @@ It uses only eBay's official Browse API (no scraping) and plain code for scoring
 ## How it works
 1. **Searches** (`searches.yaml`, edit it any time): broad lot searches like `1st bowman lot`,
    your own terms, misspellings (`bowmen`, `refracter`) that fewer buyers find, team lots and
-   player-name lots built from `prospects.yaml`. Each search looks at newly listed Buy It Now
-   lots and auctions ending in the next 3 hours.
+   player-name lots built from `prospects.yaml`, common name typos (`typos:` in
+   `prospects.yaml`, e.g. "Eli Willets"), and your risers (`risers.yaml`). Each search looks at
+   newly listed Buy It Now lots and auctions ending in the next 3 hours (8 hours from 8-11 PM, to
+   catch auctions ending 1-6 AM when few people bid).
 2. **Details**: for the most promising new lots, one extra call reads the item specifics and
    description: real shipping, number of cards, players named, and Sport (non-baseball lots
    are dropped).
 3. **Score** (`score.py`): prospects named (up to 45, the #1 prospect counts most), card types
    (1st Bowman, auto, numbered, graded, refractor... up to 30), price per card (up to 20),
-   freshness (5). The page shows why each lot got its score.
+   freshness (5). Also: listed over 7 days ago -10, same-card bulk ("x50 one card") -10 with
+   stricter price points, seller feedback under 50 +5, auction ending 1-6 AM Eastern with 0-2
+   bids +5, risers +8, and your own sold prices / sell-through (below). The page shows why each
+   lot got its score.
 4. **Alerts**: new lots scoring `alert_min_score` (60) or more, first seen in the last 12 hours,
    outside quiet hours (11pm-8am). The very first scan sends none.
-5. **Web page** tabs: Top lots, New (last 24 h), Auctions ending soon, $1 a card or less, Searches.
+5. **Web page** tabs: Top lots, New (last 24 h), Auctions ending soon, $1 a card or less,
+   Make an offer (Best Offer lots listed 7+ days ago), Trending (from our own scans: lots and
+   median asking price this week vs last, average bids), Prospect news, Searches, What you like.
+   Tab counts read "60 of 412" (shown of total). Each lot tab has sort / min score / prospect
+   filters, and a **Compact list** button (remembered in your browser). Click a photo to enlarge.
+
+## Your own research (by hand: nothing here is scraped or automated)
+- **Sold-price links** on every lot: eBay sold, 130point, and eBay **Product Research**
+  (`ebay.com/sh/research`, in Seller Hub). Note: Seller Hub only opens for accounts with at
+  least one completed sale.
+- **`manual_comps.csv`**: `title,total_price,sold_date,sell_through`. Type in sales you look up.
+  Each row should name one prospect. A lot whose named prospects' sold prices (one card each)
+  cover its price gets +5 (1.5x: +10). `sell_through` is optional (65 = 65%, e.g. from
+  Product Research); above 50% adds +1 per 10 points, up to +3.
+- **`risers.yaml`**: players you think are getting hot, with a note. +8 on their lots, a
+  "Riser" tag, their own search every 2 hours; listed on the Prospect news tab (edit link there).
+- **`prospects.yaml`**: change its `updated:` date when you refresh it. Every January the page
+  shows a reminder (MLB Pipeline's new Top 100 comes out then).
 
 ## Rate lots: Good / Medium / Bad (it learns from you)
 Every lot on the page, and every phone alert, has **Good / Medium / Bad** buttons. A rating is

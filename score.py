@@ -9,10 +9,19 @@ here if your experience says otherwise.
   Price per card    up to 20   $0.50 or less = 20, $1 = 15, $2 = 10, $3 = 6, $5 = 3
   Fresh             up to  5   Buy It Now listed in the last hour, or an auction ending
                                within the hour with no bids
+  Stale               -10      Buy It Now listed over 7 days ago (still unsold: likely overpriced)
+  Same-card bulk      -10      many copies of one card (and stricter price-per-card points)
+  New seller           +5      seller feedback under 50 (new sellers often underprice)
+  Late-night auction   +5      ends 1-6 AM Eastern with 0-2 bids
+  Your sold prices  +5 / +10   named cards' sold prices (manual_comps.csv) cover the price / 1.5x
+  Sell-through      up to  3   a named player's sell_through over 50% (+1 per 10 points)
+  Riser                +8      each player from risers.yaml
 """
 import re
+from zoneinfo import ZoneInfo
 
 import lots
+import manual
 from parse import norm, TEAM_COLOR_WORDS
 from store import now, parse_time
 
@@ -31,7 +40,26 @@ FEATURES = [  # (name, points, pattern) - checked against the title + item speci
     ("Chrome", 3, r"\bchrome\b"),
     ("RC", 3, r"\b(rc|rcs|rookie|rookies)\b"),
 ]
+# Same-card bulk: many copies of ONE card ("x100 Caleb Bonemer", "lot of 50 same card",
+# "Lot of (18) ... #BD-1"). Harder to resell than a mixed lot, so it's scored on its own.
+SAME_CARD = re.compile(r"\bsame (card|player)\b|\bidentical\b|\bcopies\b"
+                       r"|\b\d{1,4}\s?x\b|\bx\s?\d{1,4}\b"       # 100x / x100
+                       r"|#?\b[a-z]{1,4}-\d{1,4}\b")              # a card number: #BD-1, BDC-12
+SAME_CARD_MIN = 5
+SAME_CARD_PENALTY = 10
+
 MAX = {"prospects": 45, "cards": 30, "price": 20, "fresh": 5}
+STALE_DAYS, STALE_PENALTY = 7, 10      # Buy It Now listed over 7 days ago: -10
+NEW_SELLER = 50                        # seller feedback under this: +5 (often underprice)
+RISER_POINTS = 8                       # each player from risers.yaml in the lot: +8
+
+
+def late_night(it, tz="America/New_York"):
+    """An auction ending 1-6 AM Eastern with 0-2 bids: few people are awake to bid."""
+    ends = parse_time(it.get("end_time"))
+    if it["buying"] != "AUCTION" or not ends or (it.get("bid_count") or 0) > 2:
+        return False
+    return 1 <= ends.astimezone(ZoneInfo(tz)).hour < 6
 
 
 def read_lot(it, details, parser):
@@ -47,7 +75,10 @@ def read_lot(it, details, parser):
         named = named.replace(team, " ")
     count = lots.card_count(it["title"], details)
     total = it["price"] + it["shipping"]
-    return {"players": parser.players_in(named), "count": count, "total": total,
+    players = parser.players_in(named)
+    same_card = bool(count and count >= SAME_CARD_MIN and len(players) == 1
+                     and SAME_CARD.search(norm(it["title"])))
+    return {"players": players, "count": count, "total": total, "same_card": same_card,
             "per_card": total / count if count else None, "text": text,
             "sport": (details.get("sport") or "").strip().lower(),
             "looked_up": bool(details)}
@@ -78,14 +109,42 @@ def looks_like_lot(title):
     return bool(LOT_WORDS.search(norm(title))) or (lots.card_count(title, None) or 0) > 1
 
 
-def score_lot(it, info, ranks):
-    """Returns (score 0-100, list of reasons like "#1 Jesus Made +25")."""
+TAG_FROM_REASON = {"1st Bowman": "1st", "1st": "1st", "Auto": "Auto",
+                   "Refractor/color": "Refractor", "Numbered": "Numbered", "Graded": "Graded"}
+
+
+def tags(it, info, reasons, tz="America/New_York"):
+    """Short labels for the page: 1st, Auto, Refractor, Best Offer, Same-card bulk, ..."""
+    out = []
+    for r in reasons:
+        name = r.rsplit(" ", 1)[0]               # "1st Bowman +15" -> "1st Bowman"
+        if name in TAG_FROM_REASON:
+            out.append(TAG_FROM_REASON[name])
+    if info.get("same_card"):
+        out.append("Same-card bulk")
+    if it.get("best_offer"):
+        out.append("Best Offer")
+    if late_night(it, tz):
+        out.append("Late-night ending")
+    fb = it.get("seller_feedback")
+    if fb is not None and fb < NEW_SELLER:
+        out.append("New seller")
+    if any(r.startswith("riser ") for r in reasons):
+        out.append("Riser")
+    return list(dict.fromkeys(out))              # no duplicates, same order
+
+
+def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
+    """Returns (score 0-100, list of reasons like "#1 Jesus Made +25").
+    market = your sold prices (manual.load), risers = {player: note} from risers.yaml."""
     reasons, parts = [], {}
 
     # 1. Prospects: higher-ranked prospects are worth more points.
     pts = 0
     for p in sorted(info["players"], key=lambda p: ranks.get(p, 99)):
-        rank = ranks.get(p, 50)
+        if p not in ranks:
+            continue                  # a riser who isn't on the prospect list: see part 6
+        rank = ranks[p]
         add = (51 - rank) / 50 * 25
         pts += add
         reasons.append(f"#{rank} {p.title()} +{add:.0f}")
@@ -107,23 +166,54 @@ def score_lot(it, info, ranks):
     if per is None:
         parts["price"] = 0
         reasons.append("card count unknown +0")
+    elif info.get("same_card"):
+        # Many copies of one card: only really cheap copies are worth it, and you'd still
+        # have to sell them one by one.
+        add = 15 if per <= 0.3 else 10 if per <= 0.6 else 6 if per <= 1 else 3 if per <= 2 else 0
+        parts["price"] = add - SAME_CARD_PENALTY
+        reasons.append(f"${per:.2f}/card +{add}")
+        reasons.append(f"same-card bulk ({info['count']} copies) -{SAME_CARD_PENALTY}")
     else:
         add = 20 if per <= 0.5 else 15 if per <= 1 else 10 if per <= 2 else 6 if per <= 3 \
             else 3 if per <= 5 else 0
         parts["price"] = add
         reasons.append(f"${per:.2f}/card +{add}")
 
-    # 4. Fresh: be one of the first to see it.
+    # 4. Fresh: be one of the first to see it. Stale: listed over a week ago and still
+    #    unsold usually means it's overpriced.
     parts["fresh"] = 0
     if it["buying"] == "BIN":
         listed = parse_time(it.get("listed") or it.get("first_seen"))
-        if listed and (now() - listed).total_seconds() <= 3600:
+        age_h = (now() - listed).total_seconds() / 3600 if listed else 0
+        if listed and age_h <= 1:
             parts["fresh"] = 5
             reasons.append("listed in the last hour +5")
+        elif age_h > STALE_DAYS * 24:
+            parts["fresh"] = -STALE_PENALTY
+            reasons.append(f"listed {age_h / 24:.0f} days ago, likely overpriced -{STALE_PENALTY}")
     else:
         ends = parse_time(it.get("end_time"))
         if ends and it["bid_count"] == 0 and (ends - now()).total_seconds() <= 3600:
             parts["fresh"] = 5
             reasons.append("no bids, ends within the hour +5")
 
-    return round(min(100, sum(parts.values()))), reasons
+    # 5. Extras: where other buyers are less likely to be looking.
+    parts["extra"] = 0
+    fb = it.get("seller_feedback")
+    if fb is not None and fb < NEW_SELLER:
+        parts["extra"] += 5
+        reasons.append(f"new seller ({fb} feedback), often underpriced +5")
+    if late_night(it, tz):
+        parts["extra"] += 5
+        reasons.append("ends 1-6 AM Eastern with few bids +5")
+
+    # 6. Your own research: sold prices / sell-through you typed in, and your risers.
+    add, why = manual.points(info, market)
+    parts["extra"] += add
+    reasons += why
+    for p in info["players"]:
+        if p in (risers or {}):
+            parts["extra"] += RISER_POINTS
+            reasons.append(f"riser {p.title()} +{RISER_POINTS}")
+
+    return round(max(0, min(100, sum(parts.values())))), reasons

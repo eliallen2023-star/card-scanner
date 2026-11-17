@@ -26,7 +26,9 @@ import yaml
 
 import feedback
 import notify
+import manual
 import score
+import trending
 import webpage
 from parse import Parser, norm
 from store import Store, iso, parse_time, now
@@ -37,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # searches the Singles category (where many small lots are listed).
 GROUPS = {"every_scan": (0, True), "my_searches": (30, True),
           "every_30_min": (30, False), "every_2_hours": (120, False),
-          "teams": (120, False), "players": (120, False),
+          "teams": (120, False), "players": (120, False), "typos": (120, False), "risers": (120, False),
           "learned": (30, False)}     # built from your Good / Medium / Bad ratings
 
 
@@ -101,8 +103,21 @@ def all_searches(searches, prospects, cfg, learned=()):
         top = sorted(prospects, key=lambda p: p["rank"])[: cfg["spotter"]["player_search_top"]]
         names = [[p["name"]] + list(p.get("aliases") or []) for p in top]
         out += [("players", q) for q in pack(names, "lot", 4, 100)]
+        # misspelled names ("Eli Willets"): fewer buyers find these lots
+        typos = [[t] for p in top for t in (p.get("typos") or [])]
+        out += [("typos", q) for q in pack(typos, "lot", 6, 100)]
+    # your risers (risers.yaml), even if they're not in prospects.yaml
+    names = [[r["name"]] + list(r.get("aliases") or []) for r in searches.get("risers") or []]
+    out += [("risers", q) for q in pack(names, "lot", 4, 100)]
     out += [("learned", q) for q in learned]
     return out
+
+
+def load_risers():
+    """risers.yaml: [{name, note, aliases}] (an empty list if the file is missing)."""
+    if not os.path.exists(os.path.join(HERE, "risers.yaml")):
+        return []
+    return [r for r in (load("risers.yaml") or {}).get("risers") or [] if r.get("name")]
 
 
 def save_rating(store, parser, item_id, label):
@@ -167,7 +182,11 @@ def budget(cfg, searches, prospects):
 def when_text(it):
     """'Buy It Now, listed 12 min ago' or 'Auction, 0 bids, ends in 1h 20m'."""
     def ago(minutes):
-        return f"{minutes:.0f} min" if minutes < 90 else f"{minutes / 60:.1f} h"
+        if minutes < 90:
+            return f"{minutes:.0f} min"
+        if minutes < 48 * 60:
+            return f"{minutes / 60:.1f} h"
+        return f"{minutes / 1440:.0f} days"           # over 48 hours: days are easier to read
     if it["buying"] == "AUCTION":
         ends = parse_time(it["end_time"])
         left = (ends - now()).total_seconds() / 60 if ends else 0
@@ -179,7 +198,10 @@ def when_text(it):
 
 def run(args):
     cfg, searches = load("config.yaml"), load("searches.yaml") or {}
-    prospects = load("prospects.yaml")["prospects"]
+    prospects_file = load("prospects.yaml")
+    prospects = prospects_file["prospects"]
+    risers = load_risers()
+    searches["risers"] = risers                  # so all_searches() adds their searches
     S = cfg["spotter"]
     if args.budget:
         total, lines = budget(cfg, searches, prospects)
@@ -188,8 +210,14 @@ def run(args):
               + ("  <-- TOO MANY: remove some searches" if total > 4800 else "  (OK)"))
         return
 
-    parser = Parser(prospects, cfg["exclude_words"])
+    # risers who aren't on the prospect list are recognized too (rank 0 = no rank points)
+    known = {norm(p["name"]) for p in prospects}
+    extra = [{"rank": 0, "name": r["name"], "aliases": r.get("aliases") or []}
+             for r in risers if norm(r["name"]) not in known]
+    parser = Parser(prospects + extra, cfg["exclude_words"])
     ranks = {norm(p["name"]): p["rank"] for p in prospects}   # "jesus made" -> 1
+    riser_notes = {norm(r["name"]): r.get("note") or "" for r in risers}
+    market = manual.load(parser)                 # your sold prices from manual_comps.csv
     testing = args.dry_run or args.demo   # testing = never send pushes or mark anything "alerted"
 
     db_path = os.path.join(HERE, "data", "demo.db" if args.demo else "cards.db")
@@ -217,6 +245,11 @@ def run(args):
     learned = learn(store, searches, prospects, cfg)
 
     # ---- 1. Run the searches that are due ----
+    tz = cfg["alerts"]["timezone"]
+    # In the evening, look further ahead for auctions, so ones ending overnight (1-6 AM,
+    # when few people bid) are found and alerted before quiet hours start.
+    evening = 20 <= datetime.now(ZoneInfo(tz)).hour <= 23
+    auction_hours = S["auction_hours_evening"] if evening else S["auction_hours"]
     quiet = in_quiet_hours(cfg) and not args.demo
     # The very first scan finds everything already listed: none of that is "new", so no alerts.
     first_run = store.get_meta("last_scan") is None and not args.demo
@@ -242,7 +275,7 @@ def run(args):
                                      S["results_per_search"], S["max_price"])
                     results += search(q, cat, "AUCTION", "endingSoonest",
                                       S["results_per_search"], S["max_price"],
-                                      ends_within_hours=S["auction_hours"])
+                                      ends_within_hours=auction_hours)
                     found += len(results)
                     for it in results:
                         # in the Singles category, keep only listings that look like lots
@@ -271,7 +304,7 @@ def run(args):
         if store.get_lot_details(it["item_id"]) is None:
             info = score.read_lot(it, None, parser)
             if not score.skip_reason(it, info, cfg, parser.exclude):
-                todo.append((score.score_lot(it, info, ranks)[0], it))
+                todo.append((score.score_lot(it, info, ranks, tz, market, riser_notes)[0], it))
     todo.sort(key=lambda x: -x[0])                     # most promising first
     lookups = 0
     for _, it in todo[: S["detail_lookups_per_run"]]:
@@ -305,16 +338,23 @@ def run(args):
         it["rating"] = my_ratings.get(it["item_id"])
         if it["rating"] == "bad":
             continue                                   # you said it's not for you: hide it
+        it["offer_only"] = False
         if it["buying"] == "BIN":
             listed = parse_time(it.get("listed") or it["first_seen"])
-            if listed and (now() - listed).total_seconds() > S["max_age_hours"] * 3600:
-                continue                               # listed over 36 h ago: off the page
-        s, reasons = score.score_lot(it, info, ranks)
+            age_h = (now() - listed).total_seconds() / 3600 if listed else 0
+            if age_h > S["max_age_hours"]:
+                # Old listings leave the page, except Best Offer lots listed 7+ days ago:
+                # those go to the "Make an offer" tab (the seller may take less).
+                if it["best_offer"] and age_h >= S["offer_after_days"] * 24:
+                    it["offer_only"] = True
+                else:
+                    continue
+        s, reasons = score.score_lot(it, info, ranks, tz, market, riser_notes)
         store.set_score(it["item_id"], s, reasons)
         if s >= S["page_min_score"]:
             it.update(score=s, reasons=reasons, info=info, when=when_text(it),
-                      new=it["item_id"] in new_ids)
-            it["players"] = [f"#{ranks.get(p, '?')} {p.title()}"
+                      new=it["item_id"] in new_ids, tags=score.tags(it, info, reasons, tz))
+            it["players"] = [(f"#{ranks[p]} " if p in ranks else "Riser ") + p.title()
                              for p in sorted(info["players"], key=lambda p: ranks.get(p, 99))]
             shown.append(it)
     shown.sort(key=lambda x: -x["score"])
@@ -330,7 +370,7 @@ def run(args):
             first_seen = parse_time(it["first_seen"])
             if it["score"] < S["alert_min_score"] or not it["info"]["looked_up"] \
                     or store.already_alerted(it["item_id"]) \
-                    or (now() - first_seen).total_seconds() > 12 * 3600:
+                    or (now() - first_seen).total_seconds() > 12 * 3600 or it["offer_only"]:
                 continue
             info = it["info"]
             size = (f"{info['count']} cards, ${info['per_card']:.2f}/card" if info["count"]
@@ -364,8 +404,11 @@ def run(args):
                             "ratings": by_search.get(q)})
     # The page's Good / Medium / Bad buttons post to your ratings topic. A demo page
     # gets buttons too, but they only show how it works (nothing is sent).
+    trend_rows, trend_days = trending.build(store, parser, ranks)
     webpage.build(page_path, shown, search_rows, cfg, updated=updated,
                   tracked=len(active), demo=args.demo, learned=learned,
+                  trending=(trend_rows, trend_days), risers=risers,
+                  prospects_updated=prospects_file.get("updated"),
                   feedback_topic=os.environ.get("NTFY_FEEDBACK_TOPIC") if not args.demo else "demo")
 
     print(f"\nsearches run: {len(ran)} | lots tracked: {len(active)} | new: {len(new_ids)} | "

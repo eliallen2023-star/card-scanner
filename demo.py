@@ -24,7 +24,15 @@ LIVE = [  # (title, type, price, shipping (None = not in search results), bids,
     ("Bowmen 1st prospect lot 20 cards Max Clark Walker Jenkins", "AUCTION", 12.00, 4.50, 3, 2.5, 900),
     # 8: reprints -> skipped
     ("2025 Bowman REPRINT lot custom Jesus Made", "FIXED_PRICE", 5.00, 1.00, 0, None, 10),
+    # 9: listed 10 days ago and accepts Best Offer -> "Make an offer" tab
+    ("Max Clark Walker Jenkins 1st Bowman Chrome lot of 12", "FIXED_PRICE", 45.00, 5.00, 0, None, 14400),
+    # 10: same-card bulk, new seller
+    ("x40 Caleb Bonemer 2024 Bowman Draft 1st #BD-31", "FIXED_PRICE", 16.00, 4.00, 0, None, 25),
 ]
+# Extra fields eBay sends with search results (index into LIVE)
+EXTRA = {9: {"best_offer": True, "seller_feedback": 2400},
+         10: {"seller_feedback": 7},
+         2: {"seller_feedback": 31}}
 
 # Pretend ratings (index into LIVE), so the demo page shows what learning looks like:
 # you liked the 1st Bowman lots with top prospects, and passed on the vague binder.
@@ -63,7 +71,8 @@ def fake_search(q, category_id, buying, sort, limit, max_price, ends_within_hour
                     "price": price, "shipping": ship or 0.0, "shipping_known": ship is not None,
                     "bid_count": bids, "end_time": iso(end),
                     "listed": iso(now() - timedelta(minutes=listed_min)),
-                    "url": f"https://www.ebay.com/itm/demo{i}", "image": ""})
+                    "url": f"https://www.ebay.com/itm/demo{i}", "image": "",
+                    "best_offer": False, "seller_feedback": 900, **EXTRA.get(i, {})})
     return out
 
 

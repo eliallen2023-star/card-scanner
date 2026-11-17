@@ -6,7 +6,11 @@ spotter:
   lots_category: "261329"    # eBay "Sports Trading Card Lots"
   singles_category: "261328" # eBay "Sports Trading Card Singles": many small lots are listed here too
   results_per_search: 200    # eBay's maximum per call
-  auction_hours: 3           # auctions are searched only in their last 3 hours
+  auction_hours: 3           # auctions are searched only in their last 3 hours...
+  auction_hours_evening: 8   # ...but 8 hours from 8-11 PM, to catch auctions ending 1-6 AM
+                             # (few bidders) before quiet hours start
+  offer_after_days: 7        # Best Offer lots listed this long ago go to the "Make an offer" tab
+  new_seller_feedback: 50    # sellers with less feedback than this: +5 (often underprice)
   max_price: 300             # skip lots above this (price + shipping)
   max_price_per_card: 5.00   # skip lots costing more than this per card (when the count is known)
   detail_lookups_per_run: 10 # new lots per run whose item specifics + description we fetch

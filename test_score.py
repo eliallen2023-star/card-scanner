@@ -41,6 +41,85 @@ def test_first_bowman_counted_once():
     assert not any(r.startswith("1st") for r in reasons)
 
 
+def test_stale_listing_loses_points():
+    from datetime import timedelta
+    it, info = lot("Jesus Made 1st Bowman lot of 10")
+    it["listed"] = iso(now() - timedelta(days=2))
+    fresh = score.score_lot(it, info, RANKS)[0]
+    it["listed"] = iso(now() - timedelta(days=12))
+    stale, reasons = score.score_lot(it, info, RANKS)
+    assert stale == fresh - 10 and any("12 days ago" in r for r in reasons)
+
+
+def test_same_card_bulk():
+    for title in ("x100 Jesus Made 2025 Bowman 1st", "Jesus Made lot of 50 same card",
+                  "Jesus Made 1st Bowman Lot of (18) #BD-1"):
+        it, info = lot(title, price=20, ship=0)
+        assert info["same_card"], title
+        _, reasons = score.score_lot(it, info, RANKS)
+        assert any(r.startswith("same-card bulk") for r in reasons)
+    # a mixed lot (two prospects) and a small one are not same-card bulk
+    assert not lot("Jesus Made Eli Willits 1st Bowman lot of 50")[1]["same_card"]
+    assert not lot("Jesus Made 1st Bowman x3")[1]["same_card"]
+    # same price per card: the mixed lot ranks higher
+    mixed = score.score_lot(*lot("Jesus Made 1st Bowman prospect lot of 50", price=25, ship=0), RANKS)[0]
+    same = score.score_lot(*lot("x50 Jesus Made 1st Bowman", price=25, ship=0), RANKS)[0]
+    assert mixed > same
+
+
+def test_new_seller_and_late_night():
+    from datetime import datetime, timezone
+    it, info = lot("Jesus Made 1st Bowman lot of 10")
+    base = score.score_lot(it, info, RANKS)[0]
+    it["seller_feedback"] = 12
+    assert score.score_lot(it, info, RANKS)[0] == base + 5
+    # an auction ending 3 AM Eastern (8 AM UTC in November) with 1 bid
+    a, ainfo = lot("Jesus Made 1st Bowman lot of 10", buying="AUCTION")
+    a["end_time"], a["bid_count"] = "2026-11-20T08:00:00Z", 1
+    assert score.late_night(a)
+    a["bid_count"] = 5                                     # lots of bids: no bonus
+    assert not score.late_night(a)
+    a["end_time"], a["bid_count"] = "2026-11-20T20:00:00Z", 0   # 3 PM Eastern
+    assert not score.late_night(a)
+
+
+def test_manual_sold_prices_and_sell_through():
+    import os, tempfile
+    import manual
+    path = os.path.join(tempfile.mkdtemp(), "comps.csv")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("title,total_price,sold_date,sell_through\n"
+                "Jesus Made 2025 Bowman 1st,20,2026-11-01,75\n"
+                "Jesus Made 2025 Bowman 1st,30,2026-11-02,\n")
+    p = Parser([{"rank": 1, "name": "Jesus Made"}], [])
+    market = manual.load(p, path)
+    assert market["jesus made"]["median"] == 25 and market["jesus made"]["sell_through"] == 75
+    it, info = lot("Jesus Made 1st Bowman lot of 10", price=10, ship=5)   # $15 for ~$25 of cards
+    base = score.score_lot(it, info, RANKS)[0]
+    s, reasons = score.score_lot(it, info, RANKS, market=market)
+    assert s == base + 10 + 2, reasons                    # 1.5x covered +10, 75% sell-through +2
+
+
+def test_riser_boost_and_tag():
+    p = Parser([{"rank": 1, "name": "Jesus Made"}, {"rank": 0, "name": "Rainiel Rodriguez"}], [])
+    it = {"title": "Rainiel Rodriguez 1st Bowman lot of 10", "buying": "BIN", "price": 10.0,
+          "shipping": 0.0, "listed": iso(now())}
+    info = score.read_lot(it, None, p)
+    s, reasons = score.score_lot(it, info, RANKS, risers={"rainiel rodriguez": "hot"})
+    assert any(r.startswith("riser Rainiel") for r in reasons)
+    assert not any(r.startswith("#") for r in reasons)     # no rank points for a non-prospect
+    assert "Riser" in score.tags(it, info, reasons)
+    out = all_searches({"risers": [{"name": "Rainiel Rodriguez"}]}, [], CFG)
+    assert ("risers", "lot Rainiel Rodriguez") in out
+
+
+def test_january_banner():
+    from datetime import date
+    import webpage
+    assert webpage.january_banner(date(2027, 1, 15))
+    assert not webpage.january_banner(date(2026, 11, 17))
+
+
 def test_skips():
     it, info = lot("Prospect lot 1st Bowman 50 cards", details={"sport": "Football", "count": 50})
     assert score.skip_reason(it, info, CFG, P.exclude).startswith("sport")
@@ -56,6 +135,14 @@ def test_details_add_players_and_count():
     details = {"players": ["Eli Willits"], "count": 30, "sport": "Baseball", "lines": []}
     it, info = lot("Bowman prospect lot", details=details)
     assert info["players"] == ["eli willits"] and info["count"] == 30
+
+
+def test_name_typos():
+    p = Parser([{"rank": 4, "name": "Eli Willits", "typos": ["Eli Willets"]}], [])
+    assert p.players_in("eli willets 1st bowman lot") == ["eli willits"]   # scored as Willits
+    out = all_searches({"player_searches": True},
+                       [{"rank": 4, "name": "Eli Willits", "typos": ["Eli Willets", "Eli Willitts"]}], CFG)
+    assert ("typos", "lot (Eli Willets, Eli Willitts)") in out
 
 
 def test_white_sox_is_not_thomas_white():

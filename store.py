@@ -59,6 +59,11 @@ class Store:
         cols = [r[1] for r in self.db.execute("PRAGMA table_info(listings)")]
         if "shipping_known" not in cols:
             self.db.execute("ALTER TABLE listings ADD COLUMN shipping_known INT DEFAULT 1")
+        # Columns added to the lot table later (Best Offer, seller feedback)
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(spotted)")]
+        for col in ("best_offer INT DEFAULT 0", "seller_feedback INT"):
+            if col.split()[0] not in cols:
+                self.db.execute(f"ALTER TABLE spotted ADD COLUMN {col}")
 
     # ---- small key/value notes, e.g. when we last searched Buy It Now ----
     def get_meta(self, k):
@@ -94,17 +99,20 @@ class Store:
                               (it["item_id"],)).fetchone() is None
         self.db.execute("""
           INSERT INTO spotted (item_id, title, buying, price, shipping, shipping_known,
-            bid_count, end_time, listed, url, image, search, first_seen, last_seen, score, reasons)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'[]')
+            bid_count, end_time, listed, url, image, search, first_seen, last_seen, score, reasons,
+            best_offer, seller_feedback)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'[]',?,?)
           ON CONFLICT(item_id) DO UPDATE SET price=excluded.price,
+            best_offer=excluded.best_offer, seller_feedback=excluded.seller_feedback,
             shipping=CASE WHEN spotted.shipping_known=1 AND excluded.shipping_known=0
                           THEN spotted.shipping ELSE excluded.shipping END,
             shipping_known=MAX(spotted.shipping_known, excluded.shipping_known),
-            bid_count=excluded.bid_count, end_time=excluded.end_time,
+            buying=excluded.buying, bid_count=excluded.bid_count, end_time=excluded.end_time,
             last_seen=excluded.last_seen""",
             (it["item_id"], it["title"], it["buying"], it["price"], it["shipping"],
              int(it["shipping_known"]), it["bid_count"], it["end_time"], it.get("listed"),
-             it["url"], it["image"], search, t, t))
+             it["url"], it["image"], search, t, t,
+             int(bool(it.get("best_offer"))), it.get("seller_feedback")))
         return new
 
     def set_shipping(self, item_id, cost):
@@ -113,7 +121,7 @@ class Store:
 
     def active_spotted(self, bin_hours):
         """Lots still worth showing: Buy It Now seen in the last `bin_hours` hours,
-        and auctions that haven't ended."""
+        and auctions that haven't ended. (Best Offer and seller feedback come along.)"""
         rows = self.db.execute(
             "SELECT * FROM spotted WHERE (buying='BIN' AND last_seen>=?) "
             "OR (buying='AUCTION' AND end_time>?)",
@@ -122,6 +130,7 @@ class Store:
         for r in rows:
             d = dict(r)
             d["shipping_known"] = bool(d["shipping_known"])
+            d["best_offer"] = bool(d.get("best_offer"))
             d["reasons"] = json.loads(d["reasons"] or "[]")
             out.append(d)
         return out
@@ -139,6 +148,10 @@ class Store:
         return [{"item_id": r["item_id"], "label": r["label"], "title": r["title"],
                  "search": r["search"], "tokens": json.loads(r["tokens"])}
                 for r in self.db.execute("SELECT * FROM ratings ORDER BY rated_at")]
+
+    def all_spotted(self):
+        """Every lot we still remember (up to 15 days), for the Trending tab."""
+        return [dict(r) for r in self.db.execute("SELECT * FROM spotted")]
 
     def set_score(self, item_id, score, reasons):
         self.db.execute("UPDATE spotted SET score=?, reasons=? WHERE item_id=?",
@@ -267,9 +280,10 @@ class Store:
     def prune(self, keep_days=30):
         cutoff = iso(now() - timedelta(days=keep_days))
         self.db.execute("DELETE FROM listings WHERE last_seen < ?", (cutoff,))
-        # Spotted lots: keep a week, so a lot that comes back isn't "new" again.
+        # Spotted lots: keep 15 days, so a lot that comes back isn't "new" again, and the
+        # Trending tab can compare this week with last week.
         self.db.execute("DELETE FROM spotted WHERE last_seen < ?",
-                        (iso(now() - timedelta(days=7)),))
+                        (iso(now() - timedelta(days=15)),))
         self.db.execute("DELETE FROM alerts WHERE sent_at < ? AND item_id NOT IN "
                         "(SELECT item_id FROM spotted)", (cutoff,))
         keep = "SELECT item_id FROM listings UNION SELECT item_id FROM spotted"
