@@ -1,102 +1,70 @@
-"""Fake eBay data so you can see the scanner work before you have API keys."""
+"""Fake eBay lots so you can see the lot spotter work without API keys (python main.py --demo)."""
 from datetime import timedelta
 from store import now, iso
 
-SALES = [  # (title, total sold price, days ago)
-    ("2025 Bowman Chrome Jesus Made 1st Auto Refractor /499", 120, 3),
-    ("2025 Bowman Chrome Jesus Made 1st Auto Refractor #/499", 135, 6),
-    ("Jesus Made 2025 Bowman Chrome 1st Bowman Auto Refractor 211/499", 128, 10),
-    ("2025 Bowman Chrome Jesus Made 1st Auto Refractor /499 Brewers", 140, 15),
-    ("2025 Bowman Chrome Eli Willits 1st Base Chrome PSA 10", 60, 4),
-    ("Eli Willits 2025 Bowman Chrome 1st PSA 10 Nationals", 55, 8),
-    ("2025 Bowman Chrome Eli Willits 1st Bowman PSA 10", 65, 12),
+LIVE = [  # (title, type, price, shipping (None = not in search results), bids,
+          #  hours until an auction ends, minutes since it was listed)
+    # 0: top prospects, 1sts, ~$0.88 a card, brand new -> high score
+    ("2025 Bowman 1st Bowman Prospect Lot (25) Jesus Made Eli Willits Leo De Vries",
+     "FIXED_PRICE", 18.00, 4.00, 0, None, 8),
+    # 1: shipping and card count only known after the detail lookup
+    ("Bowman Chrome Refractor Lot Prospects 1st Bowman", "FIXED_PRICE", 40.00, None, 0, None, 35),
+    # 2: auction ending soon, no bids yet, an auto of the #2 prospect
+    ("Leo De Vries 1st Bowman Chrome Auto /499 + Kade Anderson 1st Lot", "AUCTION",
+     35.00, 5.00, 0, 0.7, 600),
+    # 3: the item specifics say Football -> skipped
+    ("Prospect Lot 1st Bowman 50 cards", "FIXED_PRICE", 20.00, 5.00, 0, None, 20),
+    # 4: vague bulk listing, no prospects named, very cheap per card
+    ("Baseball card collection binder 300 cards Bowman Topps", "FIXED_PRICE", 55.00, 10.00, 0, None, 50),
+    # 5: $8+ a card -> skipped (over max_price_per_card)
+    ("Jesus Made 1st Bowman Lot of (18) BD-1 Brewers", "FIXED_PRICE", 150.00, 4.00, 0, None, 120),
+    # 6: one prospect, $2 a card
+    ("Eli Willits 1st Bowman lot x5 2025 Bowman Draft", "FIXED_PRICE", 9.00, 1.00, 0, None, 300),
+    # 7: misspelled title (found by the misspelling search), auction with bids
+    ("Bowmen 1st prospect lot 20 cards Max Clark Walker Jenkins", "AUCTION", 12.00, 4.50, 3, 2.5, 900),
+    # 8: reprints -> skipped
+    ("2025 Bowman REPRINT lot custom Jesus Made", "FIXED_PRICE", 5.00, 1.00, 0, None, 10),
 ]
 
-LIVE = [  # (title, type, price, shipping (None = not in search results), bids, hours until end)
-    ("2025 Bowman Chrome Jesus Made 1st Auto Refractor /499 RC", "FIXED_PRICE", 74.99, 4.99, 0, None),
-    ("Eli Willits 2025 Bowman Chrome 1st PSA 10 Gem Mint", "AUCTION", 22.00, 5.00, 4, 1.5),
-    ("2025 Bowman Chrome Eli Willits 1st PSA 10", "AUCTION", 20.00, 5.00, 2, 20),  # ends too late
-    ("Prospect lot Jesus Made Leo De Vries Eli Willits Kade Anderson 1st Bowman", "FIXED_PRICE", 15.00, 4.00, 0, None),
-    ("2025 Bowman Jesus Made REPRINT custom card", "FIXED_PRICE", 2.00, 1.00, 0, None),
-    # Shipping missing from search results; the lookup finds the real cost:
-    ("2025 Bowman Chrome Eli Willits 1st PSA 10 Nationals", "FIXED_PRICE", 24.00, None, 0, None),
-    ("Jesus Made 2025 Bowman Chrome 1st Auto Refractor /499 Brewers", "FIXED_PRICE", 70.00, None, 0, None),
-    # No sales recorded for this card, but 4 other sellers are asking ~$95;
-    # the $55 one shows up under "Recommended":
-    ("2025 Bowman Chrome Franklin Arias 1st Auto Refractor /499", "FIXED_PRICE", 90.00, 4.00, 0, None),
-    ("Franklin Arias 2025 Bowman Chrome 1st Auto Refractor 101/499 Red Sox", "FIXED_PRICE", 95.00, 4.00, 0, None),
-    ("2025 Bowman Chrome Franklin Arias 1st Bowman Auto Refractor #/499", "FIXED_PRICE", 100.00, 4.00, 0, None),
-    ("Franklin Arias 2025 Bowman Chrome 1st Auto Refractor /499 RC", "FIXED_PRICE", 85.00, 4.00, 0, None),
-    ("2025 Bowman Chrome Franklin Arias 1st Auto Refractor /499 Rookie", "FIXED_PRICE", 55.00, 4.00, 0, None),
-    # Cheap 1st Bowman card -> "Cheap 1st Bowman & rookie cards" section:
-    ("2025 Bowman Draft Eli Willits 1st Bowman Paper #BD-1 Nationals", "FIXED_PRICE", 2.50, 1.00, 0, None),
-    # #13: a lot of 10 copies of one cheap card (see LOT_DETAILS) -> under singles value,
-    # but each card is worth < $6, so no resale profit: page only
-    ("Eli Willits 1st Bowman Lot of (10) 2025 Bowman Draft Chrome #BDC-1", "FIXED_PRICE", 20.00, 4.00, 0, None),
-    # #14-16: singles of that card, so the lot has something to compare with
-    ("2025 Bowman Draft Chrome Eli Willits 1st #BDC-1", "FIXED_PRICE", 3.50, 1.00, 0, None),
-    ("Eli Willits 2025 Bowman Draft Chrome 1st Bowman BDC-1", "FIXED_PRICE", 4.00, 1.00, 0, None),
-    ("2025 Bowman Draft Chrome #BDC-1 Eli Willits 1st Nationals", "FIXED_PRICE", 4.50, 1.00, 0, None),
-    # #17: cheap bulk lot, $22 for 25 cards ($0.88 each) with prospect 1sts
-    #      -> "Cheap 1st & RC lots" section
-    ("2025 Bowman 1st Bowman RC Lot (25) Jesus Made Eli Willits + Base", "FIXED_PRICE", 18.00, 4.00, 0, None),
-]
-
-# What item_details() would return for the demo lots (index into LIVE).
-LOT_DETAILS = {
-    3: {"shipping": 4.00, "players": ["Jesus Made", "Leo De Vries", "Eli Willits", "Kade Anderson"],
-        "count": 4,
-        "lines": ["Prospect lot, 4 cards, shipped in toploaders:",
-                  "2025 Bowman Chrome Eli Willits 1st PSA 10",
-                  "2025 Bowman Chrome Jesus Made 1st Refractor",
-                  "2024 Bowman Leo De Vries 1st",
-                  "2025 Bowman Draft Kade Anderson 1st"]},
-    13: {"shipping": 4.00, "players": ["Eli Willits"], "count": 10,
-         "lines": ["Lot of 10 Eli Willits Bowman Draft cards, all the same card."]},
-    17: {"shipping": 4.00, "players": ["Jesus Made", "Eli Willits"], "count": 25,
-         "lines": ["25 card lot, you get everything pictured:",
-                   "Jesus Made 2025 Bowman 1st Bowman BP-50",
-                   "Eli Willits 2025 Bowman Draft 1st RC BD-1",
-                   "plus 23 base cards of other players"]},
+# What item_details() would return (index into LIVE)
+DETAILS = {
+    0: {"shipping": 4.00, "players": ["Jesus Made", "Eli Willits", "Leo De Vries"], "count": 25,
+        "sport": "Baseball", "features": "Rookie", "set": "2025 Bowman",
+        "lines": ["25 card lot, you get everything pictured:",
+                  "Jesus Made 2025 Bowman 1st Bowman BP-50",
+                  "Eli Willits 2025 Bowman Draft 1st BD-1",
+                  "Leo De Vries 2025 Bowman 1st",
+                  "plus 22 base cards"]},
+    1: {"shipping": 5.00, "players": ["Sebastian Walcott", "Walker Jenkins"], "count": 10,
+        "sport": "Baseball", "features": "Refractor", "set": "Bowman Chrome", "lines": []},
+    2: {"shipping": 5.00, "players": ["Leo De Vries", "Kade Anderson"], "count": 2,
+        "sport": "Baseball", "features": "Autograph, Serial Numbered", "set": "Bowman Chrome",
+        "lines": []},
+    3: {"shipping": 5.00, "players": [], "count": 50, "sport": "Football", "features": None,
+        "set": None, "lines": []},
 }
-LOOKUP_SHIPPING = {5: 5.00,    # cheap shipping -> still a deal
-                   6: 40.00}   # $40 shipping -> no longer a deal
-
-
-def seed_comps(store, parser):
-    for i, (title, price, days) in enumerate(SALES):
-        c = parser.parse(title)
-        store.db.execute("INSERT OR IGNORE INTO comps VALUES (?,?,?,?,?,?)",
-                         (f"demo{i}", c.key, c.key_noyear, price,
-                          iso(now() - timedelta(days=days)), "demo"))
 
 
 def fake_search(q, category_id, buying, sort, limit, max_price, ends_within_hours=None):
-    """Acts like Ebay.search. q looks like "(Jesus Made, Leo De Vries, ...)"."""
-    inside = q[q.find("(") + 1:q.rfind(")")] if "(" in q else q
-    names = [n.strip().lower() for n in inside.split(",")]
+    """Acts like Ebay.search: every demo lot shows up in the Lots category."""
+    if category_id != "261329":
+        return []
     out = []
-    for i, (title, b, price, ship, bids, hrs) in enumerate(LIVE):
-        if b != buying or not any(n in title.lower() for n in names):
+    for i, (title, b, price, ship, bids, hrs, listed_min) in enumerate(LIVE):
+        if b != buying:
             continue
-        if ends_within_hours and hrs and hrs > ends_within_hours:
-            continue   # the real search filters these out too
         end = now() + timedelta(hours=hrs) if hrs else now() + timedelta(days=20)
         out.append({"item_id": f"v1|demo{i}|0", "title": title,
                     "buying": "AUCTION" if b == "AUCTION" else "BIN",
                     "price": price, "shipping": ship or 0.0, "shipping_known": ship is not None,
-                    "bid_count": bids,
-                    "end_time": iso(end), "url": f"https://www.ebay.com/itm/demo{i}",
-                    "image": ""})
+                    "bid_count": bids, "end_time": iso(end),
+                    "listed": iso(now() - timedelta(minutes=listed_min)),
+                    "url": f"https://www.ebay.com/itm/demo{i}", "image": ""})
     return out
 
 
 def fake_details(item_id):
     """Acts like Ebay.item_details."""
     idx = int(item_id.split("|")[1].replace("demo", ""))
-    return LOT_DETAILS.get(idx, {"shipping": None, "lines": [], "players": [], "count": None})
-
-
-def fake_shipping(item_id):
-    """Acts like Ebay.get_shipping. item_id looks like "v1|demo5|0"."""
-    return LOOKUP_SHIPPING.get(int(item_id.split("|")[1].replace("demo", "")))
+    return DETAILS.get(idx, {"shipping": None, "lines": [], "players": [], "count": None,
+                             "sport": "Baseball", "features": None, "set": None})

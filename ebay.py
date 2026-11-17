@@ -89,7 +89,10 @@ class Ebay:
             count = None
         return {"shipping": cheapest_shipping(j),
                 "lines": description_lines(j.get("description") or ""),
-                "players": players, "count": count}
+                "players": players, "count": count,
+                # used to keep football/basketball lots out, and to spot 1st/auto/etc.
+                "sport": aspects.get("Sport"), "features": aspects.get("Features"),
+                "set": aspects.get("Set")}
 
 
 def description_lines(desc_html):
@@ -135,6 +138,7 @@ def simplify(i):
         "shipping_known": ship is not None,
         "bid_count": i.get("bidCount", 0) or 0,
         "end_time": i.get("itemEndDate"),
+        "listed": i.get("itemCreationDate"),   # when the seller listed it
         "url": i.get("itemWebUrl", ""),
         "image": (i.get("image") or {}).get("imageUrl", ""),
     }

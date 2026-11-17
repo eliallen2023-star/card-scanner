@@ -1,13 +1,20 @@
-"""Card Scanner: find underpriced top-prospect cards on eBay.
+"""Lot Spotter: find baseball card lots on eBay, score them, and alert you to new good ones.
 
   python main.py            # real run (needs EBAY_CLIENT_ID, EBAY_CLIENT_SECRET; NTFY_TOPIC optional)
   python main.py --dry-run  # real eBay search, but print alerts instead of sending them
   python main.py --demo     # fake data, no internet, no keys - just to see it work
+  python main.py --budget   # how many eBay API calls a day your searches.yaml uses
 
-Every run also writes a web page:
-  real run  -> docs/index.html   (published by GitHub Pages)
-  dry run   -> docs/preview.html (local only)
-  demo      -> docs/demo.html    (local only)
+One run:
+  1. runs the searches in searches.yaml that are due (Buy It Now newly listed +
+     auctions ending soon), and remembers every lot it finds
+  2. looks up item specifics + description for the best-looking NEW lots
+     (real shipping, Sport, players named, card count)
+  3. scores every lot 0-100 (score.py): top prospects named, 1st/auto/numbered,
+     price per card, how fresh it is
+  4. sends a phone alert for new lots over your alert score, with the eBay link
+  5. writes the web page: real run -> docs/index.html, dry run -> docs/preview.html,
+     demo -> docs/demo.html
 """
 import argparse
 import os
@@ -17,13 +24,19 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-import lots
 import notify
+import score
 import webpage
 from parse import Parser, norm
 from store import Store, iso, parse_time, now
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# How often each group in searches.yaml runs (minutes), and whether it also
+# searches the Singles category (where many small lots are listed).
+GROUPS = {"every_scan": (0, True), "my_searches": (30, True),
+          "every_30_min": (30, False), "every_2_hours": (120, False),
+          "teams": (120, False), "players": (120, False)}
 
 
 def load(name):
@@ -39,159 +52,23 @@ def in_quiet_hours(cfg):
     return (h >= s or h < e) if s > e else (s <= h < e)
 
 
-def evaluate(it, card, store, cfg, parser, ranks):
-    """Return a dict describing the deal if this listing looks underpriced, else None."""
-    d = cfg["deal"]
-    total = it["price"] + it["shipping"]
-    ends = parse_time(it["end_time"])
-    hours_left = (ends - now()).total_seconds() / 3600 if ends else None
-
-    if it["buying"] == "AUCTION" and (hours_left is None or hours_left > d["auction_alert_hours"]):
-        return None
-
-    if card.is_lot:
-        # Two lot rules (lots.py):
-        #  1. worth 30%+ more as singles (alerts if reselling them makes $10+)
-        #  2. cheap bulk lot: ~$1 or less per card with 1st/RC cards (page only)
-        if not cfg["lots"]["enabled"]:
-            return None
-        a = lots.evaluate_lot(it, card, store, cfg, parser)
-        if not (a and a["alert"]):
-            a = lots.bulk_lot(it, card, store, cfg, parser, ranks) or a
-        if a:
-            a["when"] = when(it, hours_left)
-            if a.get("bulk"):
-                return a                     # page only, no alert text needed
-            top = ", ".join(f'{r["card"].player.title()} ${r["value"]:.0f}'
-                            + (f' x{r["qty"]}' if r["qty"] > 1 else "") for r in a["rows"][:4])
-            a["body"] = (f"{it['title']}\n{top}\n"
-                         f"Est. profit ~${a['profit']:.0f} reselling the singles\n{a['when']}")
-        return a
-
-    if card.product == "?":
-        return None   # unknown product (e.g. Panini): too many different cards share one key
-    median, n = store.comp_stats(card, d["comp_days"])
-    if median is None or n < d["min_comps"]:
-        return None
-    discount = 1 - total / median
-    profit = median * (1 - d["ebay_fee_rate"]) - d["ship_out_cost"] - total
-    if discount < d["min_discount"] or profit < d["min_profit"]:
-        return None
-    return {
-        "kind": "deal",
-        "headline": f"{discount:.0%} under comps: ${total:.2f} vs ${median:.2f}",
-        "body": (f"{it['title']}\n"
-                 f"Est. profit ~${profit:.0f} after fees | {n} comps\n"
-                 + when(it, hours_left)),
-        "when": when(it, hours_left),
-        "total": total, "median": median, "profit": profit,
-        "discount": discount, "comps": n}
-
-
-def is_first_bowman(card):
-    return card.first and card.product.startswith("bowman")
-
-
-def desirability(card, ranks):
-    """How much buyers want this card, 0-130, plus readable tags. Simple on purpose:
-    change the points here if your experience says otherwise."""
-    rank = ranks.get(card.player, 50)
-    score = (51 - rank) * 0.8              # #1 prospect = 40 points ... #50 = 0.8
-    tags = [f"#{rank} prospect"]
-    if is_first_bowman(card):
-        score += 30; tags.append("1st Bowman")   # the card collectors want most
-    elif card.first:
-        score += 10; tags.append("1st")          # e.g. 1st Topps Pro Debut
-    if card.rookie:
-        score += 10; tags.append("RC")
-    if card.auto:
-        score += 20; tags.append("Auto")
-    if card.serial:
-        score += 15 if int(card.serial[1:]) <= 99 else 8; tags.append(card.serial)
-    if card.parallel not in ("base", "refractor"):
-        score += 5; tags.append(card.parallel.title())
-    elif card.parallel == "refractor":
-        tags.append("Refractor")
-    if card.grade.endswith(" 10"):
-        score += 10; tags.append(card.grade)
-    return score, tags
-
-
-def recommend(it, card, store, cfg, ranks):
-    """A 'worth a look' pick, judged against current asking prices (not sales).
-    Returns a dict like evaluate() does, or None."""
-    r, d = cfg["recommend"], cfg["deal"]
-    if not r["enabled"] or card.is_lot or it["buying"] != "BIN" or card.product == "?":
-        return None
-    total = it["price"] + it["shipping"]
-    ask, n_asks = store.ask_stats(card, r["ask_days"], it["item_id"])
-    if ask is None or n_asks < r["min_asks"]:
-        return None
-    under = 1 - total / ask
-    if under < r["min_under_ask"]:
-        return None
-    # Same profit rule as deals, using the typical ask as the resale price.
-    # This drops cheap base cards: a $1.50 card can't clear $10 after fees + shipping.
-    profit = ask * (1 - d["ebay_fee_rate"]) - d["ship_out_cost"] - total
-    if profit < d["min_profit"]:
-        return None
-    # If we DO have a sale or two and this price isn't below them, skip it.
-    sold, n_sold = store.comp_stats(card, cfg["deal"]["comp_days"])
-    if sold is not None and total >= sold:
-        return None
-    score, tags = desirability(card, ranks)
-    if score < r["min_score"]:
-        return None
-    return {"kind": "rec",
-            "headline": f"{under:.0%} under typical asking price",
-            "when": when(it, None), "tags": tags,
-            "total": total, "ask_median": ask, "asks": n_asks, "under": under,
-            "sold_median": sold, "sold_n": n_sold,
-            "score": round(score * under * 2),   # desirability x how cheap, roughly 0-100
-            "ask_profit": profit,
-            # profit stays None so deals (backed by real sales) always sort first
-            "median": None, "profit": None, "discount": None, "comps": n_sold}
-
-
-def cheap_pick(it, card, store, cfg, ranks):
-    """A cheap 1st Bowman / rookie card to look at. No profit rule: these are
-    cards to hold or check out, not quick flips. Returns a dict, or None."""
-    c = cfg["cheap_firsts"]
-    if not c["enabled"] or card.is_lot or it["buying"] != "BIN":
-        return None
-    if not (card.first or card.rookie):
-        return None
-    total = it["price"] + it["shipping"]
-    if total > c["max_total"]:
-        return None
-    score, tags = desirability(card, ranks)
-    ask, n_asks = store.ask_stats(card, cfg["recommend"]["ask_days"], it["item_id"])
-    return {"kind": "cheap", "headline": f"Cheap {tags[1] if len(tags) > 1 else 'card'}",
-            "when": when(it, None), "tags": tags, "total": total,
-            "score": round(score), "ask_median": ask, "asks": n_asks,
-            "median": None, "profit": None, "discount": None, "comps": 0}
-
-
-def when(it, hours_left):
-    if it["buying"] == "AUCTION":
-        return f"AUCTION, {it['bid_count']} bids, ends in {hours_left:.1f}h (price will rise)"
-    return "Buy It Now"
+def minutes_since(store, key):
+    t = parse_time(store.get_meta(key))
+    return (now() - t).total_seconds() / 60 if t else float("inf")
 
 
 def make_query(terms, extra=""):
     """eBay search text. Several names in parentheses means 'any of these':
-    (Jesus Made, Leo De Vries, Leo DeVries) finds listings naming any of them."""
+    (Jesus Made, Leo De Vries) finds listings naming either."""
     q = terms[0] if len(terms) == 1 else "(" + ", ".join(terms) + ")"
     return f"{extra} {q}".strip()
 
 
-def search_groups(prospects, extra, per_search, max_len=100):
-    """Pack players into as few searches as possible: up to `per_search` players each,
-    and eBay allows at most 100 characters of search text. Each player's aliases
-    (other spellings) go in the same search."""
+def pack(items, extra, per_search=4, max_len=100):
+    """Pack names into as few OR searches as possible: up to `per_search` per search,
+    under eBay's 100-character limit. Each item is a list of spellings kept together."""
     groups, cur, n = [], [], 0
-    for p in prospects:
-        terms = [p["name"]] + list(p.get("aliases") or [])
+    for terms in items:
         if cur and (n + 1 > per_search or len(make_query(cur + terms, extra)) > max_len):
             groups.append(cur)
             cur, n = [], 0
@@ -199,78 +76,79 @@ def search_groups(prospects, extra, per_search, max_len=100):
         n += 1
     if cur:
         groups.append(cur)
-    return groups
+    return [make_query(g, extra) for g in groups]
 
 
-def lookup_lots(candidates, store, cfg, get_details):
-    """Fetch full details (description, players, card count, shipping) for lots we
-    haven't looked at yet - at most N per run, each lot only once. Lots that look like
-    about $1 a card from the title go first, then those naming the most prospects,
-    then the cheapest. Returns how many lookups were made."""
-    todo = [(it, card) for it, card in candidates.values()
-            if card.is_lot and store.get_lot_details(it["item_id"]) is None]
-    max_per_card = cfg["lots"]["bulk"]["max_price_per_card"]
+def all_searches(searches, prospects, cfg):
+    """Every search as (group, query). Team and player searches are built from prospects.yaml."""
+    out = []
+    for group in ("every_scan", "my_searches", "every_30_min", "every_2_hours"):
+        for q in searches.get(group) or []:
+            q = str(q).strip()
+            if len(q) > 100:
+                print(f"  skipped (over eBay's 100-character limit): {q}")
+            elif q:
+                out.append((group, q))
+    if searches.get("team_searches"):
+        # each team once, best-ranked prospects' teams first: "(Brewers, Athletics, ...) bowman lot"
+        ordered = sorted(prospects, key=lambda p: p["rank"])
+        teams = list(dict.fromkeys(p["team"] for p in ordered if p.get("team")))
+        out += [("teams", f"{q} bowman lot") for q in pack([[t] for t in teams], "", 4, 89)]
+    if searches.get("player_searches"):
+        top = sorted(prospects, key=lambda p: p["rank"])[: cfg["spotter"]["player_search_top"]]
+        names = [[p["name"]] + list(p.get("aliases") or []) for p in top]
+        out += [("players", q) for q in pack(names, "lot", 4, 100)]
+    return out
 
-    def priority(x):
-        it, card = x
-        total = it["price"] + it["shipping"]
-        count = lots.card_count(it["title"], None)
-        cheap_per_card = bool(count) and total / count <= max_per_card * 1.5
-        return (not cheap_per_card, -len(card.players_in_title), total)
 
-    todo.sort(key=priority)
-    done = 0
-    for it, card in todo[: cfg["lots"]["detail_lookups_per_run"]]:
-        try:
-            details = get_details(it["item_id"])
-        except Exception as e:
-            print(f"  lot lookup failed for {it['item_id']}: {e}")
+def budget(cfg, searches, prospects):
+    """Worst-case eBay API calls per day for the current settings (eBay allows 5,000)."""
+    S, A = cfg["spotter"], cfg["alerts"]
+    quiet = (A["quiet_end"] - A["quiet_start"]) % 24
+    day_runs = (24 - quiet) * 60 / S["every_minutes"]
+    night_runs = quiet * 60 / S["night_every_minutes"]
+    lines, total = [], 0
+    for group, (every, singles_too) in GROUPS.items():
+        qs = [q for g, q in all_searches(searches, prospects, cfg) if g == group]
+        if not qs:
             continue
-        done += 1
-        store.save_lot_details(it["item_id"], details)   # never look this one up again
-        if details.get("shipping") is not None and not it["shipping_known"]:
-            it["shipping"], it["shipping_known"] = details["shipping"], True
-            store.save_shipping(it["item_id"], details["shipping"])
-            store.upsert_listing(it, card)
-    return done
+        runs = day_runs + night_runs if every <= S["every_minutes"] else \
+            (24 - quiet) * 60 / every + night_runs * min(1, S["night_every_minutes"] / every)
+        calls = len(qs) * 2 * (2 if singles_too else 1) * runs
+        total += calls
+        lines.append(f"  {group:14} {len(qs):2} searches x 2 (BIN + auctions)"
+                     f"{' x 2 categories' if singles_too else ''} x {runs:.0f} runs = {calls:,.0f}")
+    lookups = S["detail_lookups_per_run"] * (day_runs + night_runs)
+    total += lookups
+    lines.append(f"  detail lookups  up to {S['detail_lookups_per_run']} x {day_runs + night_runs:.0f} runs"
+                 f" = {lookups:,.0f}")
+    return total, lines
 
 
-def fill_shipping(candidates, store, cfg, ranks, parser, get_shipping):
-    """For listings with unknown shipping that WOULD be a deal (or a recommended
-    pick) if shipping were free, look up the real cost - most promising first, at
-    most N per run. Returns how many lookups were made."""
-    maybe = []
-    for it, card in candidates.values():
-        if it["shipping_known"] or card.is_lot:   # lots get shipping from lookup_lots
-            continue
-        # assumes free shipping for now; deals sort before recommended picks
-        a = evaluate(it, card, store, cfg, parser, ranks) or recommend(it, card, store, cfg, ranks)
-        if a:
-            maybe.append((a["profit"] or 0, it, card))
-    maybe.sort(key=lambda x: -x[0])          # biggest possible profit first
-
-    done = 0
-    for _, it, card in maybe[: cfg["search"]["shipping_lookups_per_run"]]:
-        try:
-            cost = get_shipping(it["item_id"])
-        except Exception as e:
-            print(f"  shipping lookup failed for {it['item_id']}: {e}")
-            continue
-        done += 1
-        if cost is not None:
-            it["shipping"], it["shipping_known"] = cost, True
-            store.save_shipping(it["item_id"], cost)   # never look this one up again
-            store.upsert_listing(it, card)
-    return done
-
-
-def minutes_since(store, key):
-    t = parse_time(store.get_meta(key))
-    return (now() - t).total_seconds() / 60 if t else float("inf")
+def when_text(it):
+    """'Buy It Now, listed 12 min ago' or 'Auction, 0 bids, ends in 1h 20m'."""
+    def ago(minutes):
+        return f"{minutes:.0f} min" if minutes < 90 else f"{minutes / 60:.1f} h"
+    if it["buying"] == "AUCTION":
+        ends = parse_time(it["end_time"])
+        left = (ends - now()).total_seconds() / 60 if ends else 0
+        return f"Auction, {it['bid_count']} bids, ends in {ago(left)} (price will rise)"
+    listed = parse_time(it.get("listed") or it.get("first_seen"))
+    return "Buy It Now" + (f", listed {ago((now() - listed).total_seconds() / 60)} ago"
+                           if listed else "")
 
 
 def run(args):
-    cfg, prospects = load("config.yaml"), load("prospects.yaml")["prospects"]
+    cfg, searches = load("config.yaml"), load("searches.yaml") or {}
+    prospects = load("prospects.yaml")["prospects"]
+    S = cfg["spotter"]
+    if args.budget:
+        total, lines = budget(cfg, searches, prospects)
+        print("Worst-case eBay API calls per day:\n" + "\n".join(lines))
+        print(f"  TOTAL about {total:,.0f} of eBay's 5,000"
+              + ("  <-- TOO MANY: remove some searches" if total > 4800 else "  (OK)"))
+        return
+
     parser = Parser(prospects, cfg["exclude_words"])
     ranks = {norm(p["name"]): p["rank"] for p in prospects}   # "jesus made" -> 1
     testing = args.dry_run or args.demo   # testing = never send pushes or mark anything "alerted"
@@ -282,9 +160,8 @@ def run(args):
 
     eb = None
     if args.demo:
-        from demo import fake_search, fake_shipping, fake_details, seed_comps
-        seed_comps(store, parser)
-        search, get_shipping, get_details = fake_search, fake_shipping, fake_details
+        from demo import fake_search, fake_details
+        search, get_details = fake_search, fake_details
     else:
         from ebay import Ebay
         client_id = os.environ.get("EBAY_CLIENT_ID")
@@ -292,115 +169,120 @@ def run(args):
         if not client_id or not client_secret:
             sys.exit("EBAY_CLIENT_ID and EBAY_CLIENT_SECRET aren't set. "
                      "See README step 2 for how to set them.")
-        eb = Ebay(client_id, client_secret, str(cfg["search"]["ship_to_zip"]))
-        search, get_shipping, get_details = eb.search, eb.get_shipping, eb.item_details
+        eb = Ebay(client_id, client_secret, str(S["ship_to_zip"]))
+        search, get_details = eb.search, eb.item_details
 
-    # ---- 1. Search eBay ----
-    # Auctions ending soon are searched EVERY run (every 15 min on GitHub), so we
-    # see each one close to its end and record a realistic sale price.
-    # Buy It Now listings are searched about once an hour (new ones aren't urgent).
-    s, d = cfg["search"], cfg["deal"]
-    do_bin = args.demo or minutes_since(store, "last_bin_search") >= s["bin_every_minutes"] - 5
-    groups = search_groups(prospects, s["extra_keywords"], s["players_per_search"])
-    candidates = {}  # item_id -> (listing, card); one entry even if several searches find it
-    failed = []
-    for terms in groups:
-        q = make_query(terms, s["extra_keywords"])
-        try:
-            found_items = search(q, s["category_id"], "AUCTION", "endingSoonest",
-                                 s["auctions_per_search"], d["max_price"],
-                                 ends_within_hours=d["auction_alert_hours"])
-            if do_bin:
-                found_items += search(q, s["category_id"], "FIXED_PRICE", "newlyListed",
-                                      s["bin_per_search"], d["max_price"])
-                if cfg["lots"]["enabled"]:
-                    # eBay's separate "Trading Card Lots" category, about hourly
-                    found_items += search(q, s["lot_category_id"], "FIXED_PRICE", "newlyListed",
-                                          s["bin_per_search"], d["max_price"])
-                    found_items += search(q, s["lot_category_id"], "AUCTION", "endingSoonest",
-                                          s["auctions_per_search"], d["max_price"],
-                                          ends_within_hours=d["auction_alert_hours"])
-        except Exception as e:
-            # One bad search shouldn't throw away the whole run - note it and move on.
-            print(f"  search failed for {q}: {e}")
-            failed.append(q)
-            continue
-        for it in found_items:
-            if it["item_id"] in candidates:
-                continue
-            card = parser.parse(it["title"])
-            if not card:
-                continue
-            if not it["shipping_known"]:   # did we look this one up before?
-                cached = store.cached_shipping(it["item_id"])
-                if cached is not None:
-                    it["shipping"], it["shipping_known"] = cached, True
-            store.upsert_listing(it, card)
-            candidates[it["item_id"]] = (it, card)
-
-    if do_bin and len(failed) < len(groups):
-        store.set_meta("last_bin_search", iso(now()))
-    elif not do_bin:
-        # Between Buy It Now searches, keep the Buy It Now listings from the last
-        # search so their deals don't vanish from the page for 45 minutes.
-        for it in store.recent_listings("BIN", s["bin_every_minutes"] + 15):
-            card = parser.parse(it["title"])
-            if card and it["item_id"] not in candidates:
-                candidates[it["item_id"]] = (it, card)
-
-    # ---- 2. Turn finished auctions (and your manual_comps.csv) into comps ----
-    new_comps = store.record_finished_auctions(d["comp_max_gap_minutes"])
-    new_comps += store.import_manual_comps(os.path.join(HERE, "manual_comps.csv"), parser)
-
-    # ---- 2b. Lot details (description, card count), then real shipping ----
-    lot_lookups = lookup_lots(candidates, store, cfg, get_details) if cfg["lots"]["enabled"] else 0
-    lookups = fill_shipping(candidates, store, cfg, ranks, parser, get_shipping)
-
-    # ---- 3. Find deals and recommended picks (all of them go on the web page) ----
-    found, lot_watch, bulk_lots, recs, cheap = [], [], [], [], {}
-    for it, card in candidates.values():
-        a = evaluate(it, card, store, cfg, parser, ranks)
-        if a and a.get("bulk"):
-            bulk_lots.append((it, card, a))   # cheap 1st/RC lot: page only
-            continue
-        if a and a["kind"] == "lot" and not a["alert"]:
-            # under singles value, but no resale profit: page only (skip tiny bulk lots)
-            if a["singles"] >= cfg["lots"]["min_watch_value"]:
-                lot_watch.append((it, card, a))
-            continue
-        if a:
-            found.append((it, card, a))
-            continue
-        r = recommend(it, card, store, cfg, ranks)
-        if r:
-            recs.append((it, card, r))
-            continue
-        c = cheap_pick(it, card, store, cfg, ranks)
-        # keep only the cheapest listing of each exact card
-        if c and (card.key not in cheap or c["total"] < cheap[card.key][2]["total"]):
-            cheap[card.key] = (it, card, c)
-    found.sort(key=lambda x: -(x[2]["profit"] or 0))   # biggest estimated profit first
-    lot_watch.sort(key=lambda x: -x[2]["discount"])
-    lot_watch = lot_watch[: cfg["lots"]["max_watch"]]
-    bulk_lots.sort(key=lambda x: (-x[2]["score"], x[2]["per_card"]))
-    bulk_lots = bulk_lots[: cfg["lots"]["bulk"]["max_items"]]
-    recs.sort(key=lambda x: -x[2]["score"])
-    recs = recs[: cfg["recommend"]["max_items"]]
-    # every 1st Bowman before any other card; then highest score; if tied, cheapest
-    cheap = sorted(cheap.values(), key=lambda x: (not is_first_bowman(x[1]),
-                                                  -x[2]["score"], x[2]["total"]))
-    cheap = cheap[: cfg["cheap_firsts"]["max_items"]]
-
-    # ---- 4. Push the new ones to your phone (unless it's quiet hours) ----
+    # ---- 1. Run the searches that are due ----
     quiet = in_quiet_hours(cfg) and not args.demo
+    # The very first scan finds everything already listed: none of that is "new", so no alerts.
+    first_run = store.get_meta("last_scan") is None and not args.demo
+    night_skip = quiet and minutes_since(store, "last_scan") < S["night_every_minutes"] - 3
+    new_ids, failed, ran = set(), [], []
+    if night_skip:
+        print("Quiet hours: searched less than an hour ago, so this run only rebuilds the page.")
+    else:
+        store.set_meta("last_scan", iso(now()))
+        for group, q in all_searches(searches, prospects, cfg):
+            every, singles_too = GROUPS[group]
+            key = f"last:{group}:{q}"
+            # due? (a few minutes' slack, because the timer doesn't fire exactly on time)
+            if not args.demo and minutes_since(store, key) < every - 3:
+                continue
+            cats = [S["lots_category"]] + ([S["singles_category"]] if singles_too else [])
+            found = kept = 0
+            try:
+                for cat in cats:
+                    results = search(q, cat, "FIXED_PRICE", "newlyListed",
+                                     S["results_per_search"], S["max_price"])
+                    results += search(q, cat, "AUCTION", "endingSoonest",
+                                      S["results_per_search"], S["max_price"],
+                                      ends_within_hours=S["auction_hours"])
+                    found += len(results)
+                    for it in results:
+                        # in the Singles category, keep only listings that look like lots
+                        if cat == S["singles_category"] and not score.looks_like_lot(it["title"]):
+                            continue
+                        kept += 1
+                        if not it["shipping_known"]:
+                            cached = store.cached_shipping(it["item_id"])
+                            if cached is not None:
+                                it["shipping"], it["shipping_known"] = cached, True
+                        if store.upsert_spotted(it, q):
+                            new_ids.add(it["item_id"])
+            except Exception as e:
+                # One bad search shouldn't throw away the whole run - note it and move on.
+                print(f"  search failed: {q}: {e}")
+                failed.append(q)
+                continue
+            store.set_meta(key, iso(now()))
+            store.set_meta(f"stats:{q}", f"{found}|{kept}")
+            ran.append(q)
+
+    # ---- 2. Look up details for the best-looking new lots ----
+    active = store.active_spotted(S["bin_show_hours"])
+    todo = []
+    for it in active:
+        if store.get_lot_details(it["item_id"]) is None:
+            info = score.read_lot(it, None, parser)
+            if not score.skip_reason(it, info, cfg, parser.exclude):
+                todo.append((score.score_lot(it, info, ranks)[0], it))
+    todo.sort(key=lambda x: -x[0])                     # most promising first
+    lookups = 0
+    for _, it in todo[: S["detail_lookups_per_run"]]:
+        try:
+            details = get_details(it["item_id"])
+        except Exception as e:
+            print(f"  lookup failed for {it['item_id']}: {e}")
+            continue
+        lookups += 1
+        store.save_lot_details(it["item_id"], details)   # never look this one up again
+        if details.get("shipping") is not None and not it["shipping_known"]:
+            store.save_shipping(it["item_id"], details["shipping"])
+            store.set_shipping(it["item_id"], details["shipping"])
+            it["shipping"], it["shipping_known"] = details["shipping"], True
+
+    # ---- 3. Score every lot that's still around ----
+    shown = []
+    for it in active:
+        details = store.get_lot_details(it["item_id"])
+        info = score.read_lot(it, details, parser)
+        if score.skip_reason(it, info, cfg, parser.exclude):
+            continue
+        s, reasons = score.score_lot(it, info, ranks)
+        store.set_score(it["item_id"], s, reasons)
+        if s >= S["page_min_score"]:
+            it.update(score=s, reasons=reasons, info=info, when=when_text(it),
+                      new=it["item_id"] in new_ids)
+            it["players"] = [f"#{ranks.get(p, '?')} {p.title()}"
+                             for p in sorted(info["players"], key=lambda p: ranks.get(p, 99))]
+            shown.append(it)
+    shown.sort(key=lambda x: -x["score"])
+
+    # ---- 4. Phone alerts for NEW good lots (Sport checked first) ----
+    # Only lots first seen in the last 12 hours: the point is to be early. (Lots found
+    # overnight during quiet hours are still new enough for the morning.)
     sent = 0
-    if not quiet:
-        new = [x for x in found if not store.already_alerted(x[0]["item_id"])]
-        for it, card, a in new[: cfg["alerts"]["max_per_run"]]:
-            notify.send(os.environ.get("NTFY_TOPIC"), a["headline"], a["body"], it["url"],
-                        it["image"], dry_run=testing)
+    if not quiet and not first_run:
+        for it in shown:
+            if sent >= cfg["alerts"]["max_per_run"]:
+                break
+            first_seen = parse_time(it["first_seen"])
+            if it["score"] < S["alert_min_score"] or not it["info"]["looked_up"] \
+                    or store.already_alerted(it["item_id"]) \
+                    or (now() - first_seen).total_seconds() > 12 * 3600:
+                continue
+            info = it["info"]
+            size = (f"{info['count']} cards, ${info['per_card']:.2f}/card" if info["count"]
+                    else "card count unknown")
+            ship = f"+ ${it['shipping']:.2f} ship" if it["shipping_known"] else "+ ship?"
+            title = f"Lot score {it['score']}: ${it['price']:.2f} {ship} ({size})"
+            body = (f"{it['title']}\n"
+                    + (f"Prospects: {', '.join(it['players'][:4])}\n" if it["players"] else "")
+                    + f"{it['when']}")
+            notify.send(os.environ.get("NTFY_TOPIC"), title, body, it["url"], it["image"],
+                        dry_run=testing)
             if not testing:
-                store.mark_alerted(it["item_id"], a["total"], a["median"], a["profit"])
+                store.mark_alerted(it["item_id"], info["total"], None, None)
             sent += 1
 
     store.prune()
@@ -410,23 +292,24 @@ def run(args):
     page = "demo.html" if args.demo else "preview.html" if args.dry_run else "index.html"
     page_path = os.path.join(HERE, "docs", page)
     updated = datetime.now(ZoneInfo(cfg["alerts"]["timezone"])).strftime("%b %d, %Y %I:%M %p %Z")
-    webpage.build(page_path, found + bulk_lots + lot_watch + recs + cheap, updated=updated, listings=len(candidates),
-                  comps=store.comp_count(), demo=args.demo)
+    search_rows = []
+    for group, q in all_searches(searches, prospects, cfg):
+        stats = (store.get_meta(f"stats:{q}") or "|").split("|")
+        search_rows.append({"group": group, "q": q, "every": GROUPS[group][0] or S["every_minutes"],
+                            "last": store.get_meta(f"last:{group}:{q}"),
+                            "found": stats[0], "kept": stats[1]})
+    webpage.build(page_path, shown, search_rows, cfg, updated=updated,
+                  tracked=len(active), demo=args.demo)
 
-    print(f"\nsearches: {len(groups)} groups ({'auctions + Buy It Now' if do_bin else 'auctions only'})"
-          f" | listings matched: {len(candidates)} | new comps: {new_comps} | "
-          f"lot lookups: {lot_lookups} | shipping lookups: {lookups} | "
-          f"deals + lots: {len(found)} | cheap 1st/RC lots: {len(bulk_lots)} | "
-          f"lots (page only): {len(lot_watch)} | "
-          f"recommended: {len(recs)} | "
-          f"cheap 1sts/RCs: {len(cheap)} | "
-          f"alerts sent: {sent}"
+    print(f"\nsearches run: {len(ran)} | lots tracked: {len(active)} | new: {len(new_ids)} | "
+          f"detail lookups: {lookups} | on the page: {len(shown)} | alerts sent: {sent}"
           + (" | quiet hours, alerts held" if quiet else "")
+          + (" | first scan: learning what's already listed, no alerts" if first_run else "")
           + (f" | eBay API calls: {eb.calls}" if eb else ""))
     print(f"web page: {page_path}")
     if failed:
-        print(f"{len(failed)} of {len(groups)} searches failed")
-        if len(failed) == len(groups):
+        print(f"{len(failed)} of {len(failed) + len(ran)} searches failed")
+        if not ran:
             sys.exit(1)  # everything failed (bad keys?) - make the GitHub run show red
 
 
@@ -434,4 +317,5 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--demo", action="store_true")
+    ap.add_argument("--budget", action="store_true")
     run(ap.parse_args())

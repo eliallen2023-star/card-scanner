@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS comps (
   sold_at TEXT, source TEXT);
 CREATE TABLE IF NOT EXISTS alerts (
   item_id TEXT PRIMARY KEY, sent_at TEXT, total REAL, median REAL, profit REAL);
+-- Lot spotter: every lot any search has found. "first_seen" tells us what's new;
+-- score/reasons are recalculated each run.
+CREATE TABLE IF NOT EXISTS spotted (
+  item_id TEXT PRIMARY KEY, title TEXT, buying TEXT, price REAL, shipping REAL,
+  shipping_known INT, bid_count INT, end_time TEXT, listed TEXT, url TEXT, image TEXT,
+  search TEXT, first_seen TEXT, last_seen TEXT, score INT, reasons TEXT);
 CREATE INDEX IF NOT EXISTS comps_key ON comps(card_key);
 CREATE INDEX IF NOT EXISTS comps_key2 ON comps(key_noyear);
 """
@@ -76,6 +82,50 @@ class Store:
     def save_lot_details(self, item_id, details):
         self.db.execute("INSERT OR REPLACE INTO lot_details VALUES (?,?,?)",
                         (item_id, json.dumps(details), iso(now())))
+
+    # ---- lot spotter ----
+    def upsert_spotted(self, it, search):
+        """Save a lot a search found. Returns True if we've never seen it before."""
+        t = iso(now())
+        new = self.db.execute("SELECT 1 FROM spotted WHERE item_id=?",
+                              (it["item_id"],)).fetchone() is None
+        self.db.execute("""
+          INSERT INTO spotted (item_id, title, buying, price, shipping, shipping_known,
+            bid_count, end_time, listed, url, image, search, first_seen, last_seen, score, reasons)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'[]')
+          ON CONFLICT(item_id) DO UPDATE SET price=excluded.price,
+            shipping=CASE WHEN spotted.shipping_known=1 AND excluded.shipping_known=0
+                          THEN spotted.shipping ELSE excluded.shipping END,
+            shipping_known=MAX(spotted.shipping_known, excluded.shipping_known),
+            bid_count=excluded.bid_count, end_time=excluded.end_time,
+            last_seen=excluded.last_seen""",
+            (it["item_id"], it["title"], it["buying"], it["price"], it["shipping"],
+             int(it["shipping_known"]), it["bid_count"], it["end_time"], it.get("listed"),
+             it["url"], it["image"], search, t, t))
+        return new
+
+    def set_shipping(self, item_id, cost):
+        self.db.execute("UPDATE spotted SET shipping=?, shipping_known=1 WHERE item_id=?",
+                        (cost, item_id))
+
+    def active_spotted(self, bin_hours):
+        """Lots still worth showing: Buy It Now seen in the last `bin_hours` hours,
+        and auctions that haven't ended."""
+        rows = self.db.execute(
+            "SELECT * FROM spotted WHERE (buying='BIN' AND last_seen>=?) "
+            "OR (buying='AUCTION' AND end_time>?)",
+            (iso(now() - timedelta(hours=bin_hours)), iso(now()))).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["shipping_known"] = bool(d["shipping_known"])
+            d["reasons"] = json.loads(d["reasons"] or "[]")
+            out.append(d)
+        return out
+
+    def set_score(self, item_id, score, reasons):
+        self.db.execute("UPDATE spotted SET score=?, reasons=? WHERE item_id=?",
+                        (score, json.dumps(reasons), item_id))
 
     def upsert_listing(self, it, card):
         t = iso(now())
@@ -200,8 +250,14 @@ class Store:
     def prune(self, keep_days=30):
         cutoff = iso(now() - timedelta(days=keep_days))
         self.db.execute("DELETE FROM listings WHERE last_seen < ?", (cutoff,))
-        self.db.execute("DELETE FROM shipping WHERE item_id NOT IN (SELECT item_id FROM listings)")
-        self.db.execute("DELETE FROM lot_details WHERE item_id NOT IN (SELECT item_id FROM listings)")
+        # Spotted lots: keep a week, so a lot that comes back isn't "new" again.
+        self.db.execute("DELETE FROM spotted WHERE last_seen < ?",
+                        (iso(now() - timedelta(days=7)),))
+        self.db.execute("DELETE FROM alerts WHERE sent_at < ? AND item_id NOT IN "
+                        "(SELECT item_id FROM spotted)", (cutoff,))
+        keep = "SELECT item_id FROM listings UNION SELECT item_id FROM spotted"
+        self.db.execute(f"DELETE FROM shipping WHERE item_id NOT IN ({keep})")
+        self.db.execute(f"DELETE FROM lot_details WHERE item_id NOT IN ({keep})")
         self.db.execute("DELETE FROM comps WHERE sold_at < ?",
                         (iso(now() - timedelta(days=120)),))
 

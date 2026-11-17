@@ -1,12 +1,14 @@
-"""Write the scan results as a single web page (docs/index.html) for GitHub Pages.
+"""Write the lot spotter's results as one web page (docs/index.html) for GitHub Pages.
 
-Plain HTML + CSS, no JavaScript. Every listing gets a "View on eBay" button plus
-links to look up sold prices yourself (eBay sold items, 130point, PSA) - clicking
-those by hand is fine; we never scrape them.
+Plain HTML + CSS, with a little JavaScript for the sidebar tabs. eBay's display
+rules: full title, price and shipping shown separately, eBay's own photo, and a
+link to the listing. The helpers at the top are also used by paste.py and check.py.
 """
 import html
 import os
 from urllib.parse import quote_plus
+
+from store import now, parse_time
 
 
 def search_words(card):
@@ -62,111 +64,53 @@ def shipping_text(it):
     return "Free" if it["shipping"] == 0 else money(it["shipping"])
 
 
-def listing_html(it, card, a):
-    # eBay's display rules: full title, price and shipping shown separately,
-    # eBay's own photo, and a link to the listing.
+def ago(iso_time):
+    """'5 min ago', '3.2 h ago', or '' if unknown."""
+    t = parse_time(iso_time)
+    if not t:
+        return ""
+    m = (now() - t).total_seconds() / 60
+    if m < 1:
+        return "just now"
+    return f"{m:.0f} min ago" if m < 90 else f"{m / 60:.1f} h ago" if m < 48 * 60 else f"{m / 1440:.0f} days ago"
+
+
+def lot_html(it):
+    """One lot: a collapsible block. Closed it's one line (score, title, price)."""
+    info = it["info"]
     img = (f'<img src="{e(it["image"])}" alt="" loading="lazy">'
            if it.get("image") else '<div class="noimg">no photo</div>')
-    known = it.get("shipping_known", True)
-    price_cells = f"""
-        <div><dt>{"Current bid" if it["buying"] == "AUCTION" else "Price"}</dt><dd>{money(it["price"])}</dd></div>
-        <div><dt>Shipping</dt><dd>{shipping_text(it)}</dd></div>"""
-    ship_warn = ("" if known else
-                 '<p class="warn">Shipping isn\'t listed in search results, so the numbers '
-                 'below assume free shipping. Check the listing for the real cost.</p>')
-    if a["kind"] == "deal":
-        stats = f"""
-      <dl class="stats">{price_cells}
-        <div><dt>Comp median</dt><dd>{money(a["median"])}</dd></div>
-        <div><dt>Est. profit</dt><dd class="good">{money(a["profit"])}</dd></div>
-        <div><dt>Comps</dt><dd>{a["comps"]}</dd></div>
-      </dl>{ship_warn}"""
-        badge = f'<span class="badge good">{a["discount"]:.0%} under</span>'
-    elif a["kind"] == "rec":
-        sold = f'{money(a["sold_median"])} ({a["sold_n"]})' if a["sold_n"] else "none yet"
-        stats = f"""
-      <dl class="stats">{price_cells}
-        <div><dt>Typical ask ({a["asks"]})</dt><dd>{money(a["ask_median"])}</dd></div>
-        <div><dt>Under typical ask</dt><dd class="good">{a["under"]:.0%}</dd></div>
-        <div><dt>Est. profit (at ask)</dt><dd class="good">{money(a["ask_profit"])}</dd></div>
-        <div><dt>Sold comps</dt><dd>{sold}</dd></div>
-      </dl>{ship_warn}
-      <p class="names">{e(" · ".join(a["tags"]))}</p>"""
-        badge = f'<span class="badge rec">Recommended · score {a["score"]}</span>'
-    elif a["kind"] == "cheap":
-        ask = (f'{money(a["ask_median"])} ({a["asks"]})' if a["ask_median"] is not None
-               else "not enough yet")
-        stats = f"""
-      <dl class="stats">{price_cells}
-        <div><dt>Typical ask</dt><dd>{ask}</dd></div>
-      </dl>{ship_warn}
-      <p class="names">{e(" · ".join(a["tags"]))}</p>"""
-        badge = f'<span class="badge rec">{e(a["headline"])} · score {a["score"]}</span>'
-    else:  # a lot, valued card by card (lots.py)
-        def qty_text(r):
-            # e.g. "100 (3 valued)" when only some copies count toward the value
-            return f'{r["qty"]} ({r["valued"]} valued)' if r["valued"] < r["qty"] else str(r["qty"])
-
-        rows = "".join(
-            f'<tr><td>{e(card_label(r["card"]))}</td><td>{qty_text(r)}</td>'
-            f'<td>{money(r["value"])}</td><td class="muted">{e(r["source"])}</td></tr>'
-            for r in a["rows"])
-        if a["unnamed"]:
-            other = "other players' cards" if a.get("bulk") else "cards not named"
-            rows += (f'<tr><td class="muted">+ {a["unnamed"]} {other}</td>'
-                     f'<td>{a["unnamed"]}</td><td>$0.00</td><td class="muted">counted as $0</td></tr>')
-        table = (f'<table class="lot"><tr><th>Card</th><th>Qty</th><th>Single value</th>'
-                 f'<th>Source</th></tr>{rows}</table>')
-
-    if a["kind"] == "lot" and a.get("bulk"):
-        # Cheap 1st/RC lot: judged on price per card, not on singles value.
-        stats = f"""
-      <dl class="stats">{price_cells}
-        <div><dt>Cards</dt><dd>{a["count"]}</dd></div>
-        <div><dt>Per card</dt><dd class="good">{money(a["per_card"])}</dd></div>
-        <div><dt>Singles value (est.)</dt><dd>{money(a["singles"])}</dd></div>
-      </dl>{ship_warn}
-      <p class="names">Prospects named: {e(", ".join(a["players"]))}</p>
-      {table}
-      <p class="names muted">Read from the {e(a["source"])}{"" if a["looked_up"] else " (full description not checked yet)"}.
-      Check the photos to see which 1st/RC cards are really in it, and their condition.</p>"""
-        badge = (f'<span class="badge good">{e(" + ".join(a["tags"]))} lot · '
-                 f'{money(a["per_card"])}/card · score {a["score"]}</span>')
-    elif a["kind"] == "lot":
-        profit_class = "good" if a["profit"] >= 0 else ""
-        stats = f"""
-      <dl class="stats">{price_cells}
-        <div><dt>Singles value</dt><dd>{money(a["singles"])}</dd></div>
-        <div><dt>Est. profit (sell singles)</dt><dd class="{profit_class}">{money(a["profit"])}</dd></div>
-      </dl>{ship_warn}
-      {table}
-      <p class="names muted">Cards read from the {e(a["source"])}{"" if a["looked_up"] else " (full description not checked yet)"}.
-      Cards worth under $6 count $0 toward profit: selling them one at a time doesn't pay.
-      Check the photos: the cards may be a cheaper version than described.</p>"""
-        badge = (f'<span class="badge good">lot · {a["discount"]:.0%} under singles</span>'
-                 if a["alert"] else
-                 f'<span class="badge">lot · {a["discount"]:.0%} under singles · no resale profit</span>')
-
-    lookups = ""
-    if a["kind"] != "lot":
-        links = " · ".join(f'<a href="{e(u)}" target="_blank" rel="noopener">{e(l)}</a>'
-                           for l, u in lookup_links(card))
-        lookups = (f'<p class="lookup">Check sold prices: {links}<br>'
-                   f'<span class="muted">search for: <code>{e(search_words(card))}</code></span></p>')
-
-    auction = " auction" if it["buying"] == "AUCTION" else ""
-    # Each listing is a collapsible <details> block. Closed, it's one line (badge,
-    # title, total price); open, it shows the full card.
+    level = "good" if it["score"] >= 60 else "rec" if it["score"] >= 40 else ""
+    badge = f'<span class="badge {level}">Score {it["score"]}</span>'
+    new = '<span class="badge new">NEW</span>' if it.get("new") else ""
+    warn = ""
+    if not it["shipping_known"]:
+        warn += ('<p class="warn">Shipping isn\'t listed in the search results, so the per-card '
+                 'price leaves it out. Check the listing.</p>')
+    players = (f'<p class="names">Prospects named: <b>{e(" · ".join(it["players"]))}</b></p>'
+               if it["players"] else '<p class="names muted">No prospects from your list named.</p>')
+    checked = ("Item specifics and description checked." if info["looked_up"] else
+               "Title only so far: item specifics and description not checked yet.")
     return f"""
     <details class="item" open>
-      <summary>{badge}<span class="sum-title">{e(it["title"])}</span>
+      <summary>{badge}{new}<span class="sum-title">{e(it["title"])}</span>
         <span class="sum-hint muted">Collapse</span>
-        <span class="sum-price">{money(a["total"])}</span></summary>
-      <article class="card{auction}">
+        <span class="sum-price">{money(it["price"])}</span></summary>
+      <article class="card{" auction" if it["buying"] == "AUCTION" else ""}">
         <div class="photo">{img}</div>
         <div class="info">
-          <div class="top">{badge}<span class="when">{e(a["when"])}</span></div>
-          <h3>{e(it["title"])}</h3>{stats}{lookups}
+          <div class="top">{badge}{new}<span class="when">{e(it["when"])}</span></div>
+          <h3>{e(it["title"])}</h3>
+          <dl class="stats">
+            <div><dt>{"Current bid" if it["buying"] == "AUCTION" else "Price"}</dt><dd>{money(it["price"])}</dd></div>
+            <div><dt>Shipping</dt><dd>{shipping_text(it)}</dd></div>
+            <div><dt>Cards</dt><dd>{info["count"] or "?"}</dd></div>
+            <div><dt>Per card</dt><dd class="{"good" if (info["per_card"] or 99) <= 1 else ""}">{money(info["per_card"]) if info["per_card"] is not None else "?"}</dd></div>
+          </dl>{warn}
+          {players}
+          <p class="names muted">Score: {e(" · ".join(it["reasons"]))}</p>
+          <p class="names muted">Found by: <code>{e(it["search"])}</code> · first seen {e(ago(it["first_seen"]))}.
+          {checked} Check the photos: lots often hold cheaper cards than the title suggests.</p>
           <a class="btn" href="{e(it["url"])}" target="_blank" rel="noopener">View on eBay</a>
         </div>
       </article>
@@ -190,7 +134,7 @@ body { margin:0; background:var(--bg); color:var(--text);
 main { min-width:0; }
 header h1 { margin:0 0 4px; font-size:26px; }
 
-/* ---- left sidebar: Singles / Lots groups, each a dropdown of section tabs ---- */
+/* ---- left sidebar: groups, each a dropdown of section tabs ---- */
 .side { position:sticky; top:16px; align-self:start; }
 .side .title { font-weight:700; font-size:18px; margin:0 0 12px; }
 .group { background:var(--panel); border:1px solid var(--line); border-radius:12px;
@@ -241,9 +185,10 @@ h2 { font-size:18px; margin:20px 0 12px; }
 .info { flex:1; min-width:0; }
 .top { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; color:var(--muted); }
 .badge { background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:2px 10px;
-         font-weight:600; color:var(--text); }
+         font-weight:600; color:var(--text); white-space:nowrap; }
 .badge.good { background:var(--good-bg); border-color:transparent; color:var(--good); }
 .badge.rec { color:var(--accent); }
+.badge.new { background:var(--warn-bg); border-color:transparent; color:var(--warn); }
 .intro { margin:-4px 0 12px; font-size:14px; }
 .auction .when { color:var(--warn); font-weight:600; }
 h3 { font-size:15px; margin:8px 0; overflow-wrap:anywhere; }
@@ -252,15 +197,17 @@ h3 { font-size:15px; margin:8px 0; overflow-wrap:anywhere; }
 dt { font-size:12px; color:var(--muted); }
 dd { margin:0; font-weight:600; font-variant-numeric:tabular-nums; }
 dd.good { color:var(--good); }
-.names, .lookup { font-size:13px; margin:0 0 10px; }
+.names { font-size:13px; margin:0 0 10px; }
 .warn { font-size:13px; margin:0 0 10px; background:var(--warn-bg); color:var(--warn);
         padding:6px 10px; border-radius:8px; }
-.lookup a { color:var(--accent); }
+a { color:var(--accent); }
 code { font-size:12px; overflow-wrap:anywhere; }
-table.lot { width:100%; border-collapse:collapse; font-size:13px; margin:0 0 10px; }
-table.lot th, table.lot td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); }
-table.lot th { color:var(--muted); font-weight:600; font-size:12px; }
-table.lot td:nth-child(2), table.lot td:nth-child(3) { font-variant-numeric:tabular-nums; white-space:nowrap; }
+table.searches { width:100%; border-collapse:collapse; font-size:13px; margin:0 0 10px;
+                 background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+table.searches th, table.searches td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+table.searches th { color:var(--muted); font-weight:600; font-size:12px; }
+table.searches td.n { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.table-wrap { overflow-x:auto; }
 .btn { display:inline-block; background:var(--accent); color:var(--accent-text); text-decoration:none;
        font-weight:600; padding:8px 16px; border-radius:8px; }
 .empty { background:var(--panel); border:1px dashed var(--line); border-radius:12px; padding:20px; color:var(--muted); }
@@ -273,10 +220,10 @@ footer { margin-top:40px; font-size:13px; color:var(--muted); }
 """
 
 
-# Tabs: show one section at a time. The open tab is kept in the address (#cheap-lots)
-# and remembered in this browser, so it survives the 15-minute auto-refresh.
-# Sections are named "tab-cheap-lots" (not "cheap-lots") so the browser doesn't
-# jump down the page to them. Without JavaScript, every section shows on one long page.
+# Tabs: show one section at a time. The open tab is kept in the address (#new)
+# and remembered in this browser, so it survives the auto-refresh.
+# Sections are named "tab-new" (not "new") so the browser doesn't jump down the page
+# to them. Without JavaScript, every section shows on one long page.
 TABS_JS = """
 (function () {
   var links = document.querySelectorAll('[data-tab]');
@@ -285,7 +232,7 @@ TABS_JS = """
   function show(id) {
     sections.forEach(function (s) { s.hidden = (s.dataset.tabId !== id); });
     links.forEach(function (a) { a.classList.toggle('active', a.dataset.tab === id); });
-    try { localStorage.setItem('card-scanner-tab', id); } catch (e) {}
+    try { localStorage.setItem('lot-spotter-tab', id); } catch (e) {}
   }
   links.forEach(function (a) {
     a.addEventListener('click', function (ev) {
@@ -295,16 +242,11 @@ TABS_JS = """
       window.scrollTo(0, 0);
     });
   });
-  // Which tab to open: the address (#...), else the last one used, else the first non-empty one.
+  // Which tab to open: the address (#...), else the last one used, else the first one.
   var start = location.hash.slice(1), saved = null;
-  try { saved = localStorage.getItem('card-scanner-tab'); } catch (e) {}
+  try { saved = localStorage.getItem('lot-spotter-tab'); } catch (e) {}
   if (!exists(start)) start = saved;
-  if (!exists(start)) {
-    start = sections[0].dataset.tabId;
-    for (var i = 0; i < sections.length; i++) {
-      if (+sections[i].dataset.count > 0) { start = sections[i].dataset.tabId; break; }
-    }
-  }
+  if (!exists(start)) start = sections[0].dataset.tabId;
   show(start);
   // Expand all / Collapse all: every section and listing on the page.
   function setAll(open) { document.querySelectorAll('main details').forEach(function (d) { d.open = open; }); }
@@ -313,50 +255,66 @@ TABS_JS = """
 })();
 """
 
+GROUP_NAMES = {"every_scan": "every scan", "my_searches": "my searches",
+               "every_30_min": "every 30 min", "every_2_hours": "every 2 hours",
+               "teams": "team (auto)", "players": "players (auto)"}
 
-def build(path, found, updated, listings, comps, demo=False):
-    """found = list of (listing, card, result_dict) from main.py."""
-    deals = [x for x in found if x[2]["kind"] == "deal"]
-    recs = [x for x in found if x[2]["kind"] == "rec"]
-    cheap = [x for x in found if x[2]["kind"] == "cheap"]
-    bulk = [x for x in found if x[2]["kind"] == "lot" and x[2].get("bulk")]
-    lots = [x for x in found if x[2]["kind"] == "lot" and not x[2].get("bulk")]
+
+def searches_html(rows, cfg):
+    """The Searches tab: what each search found last time, and how to change them."""
+    body = "".join(
+        f'<tr><td><code>{e(r["q"])}</code></td><td>{e(GROUP_NAMES.get(r["group"], r["group"]))}</td>'
+        f'<td class="n">{e(ago(r["last"]) or "not yet")}</td>'
+        f'<td class="n">{e(r["found"] or "-")}</td><td class="n">{e(r["kept"] or "-")}</td></tr>'
+        for r in rows)
+    repo = cfg["spotter"].get("repo")
+    edit = (f'<a href="https://github.com/{e(repo)}/edit/main/searches.yaml" target="_blank" '
+            f'rel="noopener">Edit your searches on GitHub</a> (sign in, change the list, then '
+            f'"Commit changes"; the next scan uses it).' if repo else
+            "Edit searches.yaml to change them.")
+    return f"""
+      <p class="intro">{edit} Spaces mean AND; <code>(a, b)</code> means either one.
+      Every search looks at newly listed Buy It Now lots and auctions ending in the next
+      {cfg["spotter"]["auction_hours"]} hours.</p>
+      <div class="table-wrap"><table class="searches">
+        <tr><th>Search</th><th>How often</th><th>Last run</th><th>eBay results</th><th>Lots kept</th></tr>
+        {body}
+      </table></div>"""
+
+
+def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
+    """lots = scored lot dicts from main.py, best score first."""
+    S = cfg["spotter"]
+    cap = S["max_per_tab"]
+    day_ago = now().timestamp() - 24 * 3600
+    newest = sorted([x for x in lots if parse_time(x["first_seen"]).timestamp() >= day_ago],
+                    key=lambda x: x["first_seen"], reverse=True)
+    ending = sorted([x for x in lots if x["buying"] == "AUCTION"], key=lambda x: x["end_time"])
+    cheap = sorted([x for x in lots if x["info"]["per_card"] is not None
+                    and x["info"]["per_card"] <= 1.00],
+                   key=lambda x: (-x["score"], x["info"]["per_card"]))
 
     # Every section: (tab id, sidebar group, title, items, message when empty, intro text)
     sections = [
-        ("deals", "Singles", "Deals", deals,
-         "No deals right now. Deals need at least 3 recorded sales of the exact same card, "
-         "so expect a quiet first few weeks while comps build up.",
-         "Priced at least 30% under recent sales of the exact same card, with $10+ estimated "
-         "profit after fees and shipping. These send phone alerts."),
-        ("recommended", "Singles", "Recommended", recs,
-         "Nothing yet. Picks need at least 3 other Buy It Now listings of the same card, "
-         "which takes a few days of scanning.",
-         "Priced well under what other sellers are asking for the exact same card, ranked by "
-         "how desirable the card is. Asking prices run higher than sale prices, so check sold "
-         "prices before you buy. No phone alerts."),
-        ("cheap-singles", "Singles", "Cheap 1st Bowman &amp; rookies", cheap,
-         "No cheap 1st Bowman or rookie cards right now.",
-         "Buy It Now, up to $6 including shipping. All 1st Bowman cards come first, then "
-         "rookies; each group is ranked by prospect rank and card type. Not checked against "
-         "comps: these are cheap cards to look at or hold, not quick flips. One listing per "
-         "card: the cheapest. Sellers often call prospect cards \"RC\" when they aren't "
-         "official rookie cards."),
-        ("cheap-lots", "Lots", "Cheap 1st &amp; RC lots", bulk,
-         "No cheap 1st/RC lots right now.",
-         "Lots that cost about $1 or less per card (price + shipping), name at least one of "
-         "your prospects (the other cards can be anyone), and mention 1st or RC cards. Ranked "
-         "by 1sts first, then RCs, then how many prospects and how highly ranked. No phone alerts."),
-        ("lots-vs-singles", "Lots", "Lots vs. singles", lots,
-         "No lots priced well under their singles right now.",
-         "Each card in the lot is priced like a single (sold comps first, then asking prices), "
-         "using the seller's description. Shown when the lot costs 30%+ less than its singles; "
-         "a green badge means reselling the singles should also make $10+, and only those "
-         "send phone alerts."),
+        ("top", "Lots", "Top lots", lots[:cap],
+         "No lots scored high enough yet.",
+         f"Every lot found, best score first (0-100). Points come from top prospects named, "
+         f"1st Bowman / auto / numbered cards, price per card, and how fresh the listing is. "
+         f"New lots scoring {S['alert_min_score']}+ send a phone alert."),
+        ("new", "Lots", "New (last 24 h)", newest[:cap],
+         "Nothing new in the last 24 hours.",
+         "Lots first seen in the last 24 hours, newest first: the ones other buyers may not have seen yet."),
+        ("ending", "Lots", "Auctions ending soon", ending[:cap],
+         "No auctions ending soon.",
+         f"Auctions ending in the next {S['auction_hours']} hours, soonest first. "
+         "The current bid will still rise."),
+        ("cheap", "Lots", "$1 a card or less", cheap[:cap],
+         "No lots at $1 a card or less right now.",
+         "Price + shipping divided by the number of cards (when the listing says how many)."),
     ]
 
     def section_html(sid, group, title, items, empty_msg, intro):
-        body = "".join(listing_html(*x) for x in items) or f'<p class="empty">{empty_msg}</p>'
+        body = "".join(lot_html(x) for x in items) or f'<p class="empty">{empty_msg}</p>'
         return f"""
   <section class="tab" id="tab-{sid}" data-tab-id="{sid}" data-count="{len(items)}">
     <details class="sec" open>
@@ -366,11 +324,10 @@ def build(path, found, updated, listings, comps, demo=False):
     </details>
   </section>"""
 
-    def group_html(group):
-        links = "".join(f'<a href="#{sid}" data-tab="{sid}">{title}<span class="count">{len(items)}</span></a>'
-                        for sid, g, title, items, _, _ in sections if g == group)
-        return f'<details class="group" open><summary>{group}</summary>{links}</details>'
-
+    links = "".join(f'<a href="#{sid}" data-tab="{sid}">{title}<span class="count">{len(items)}</span></a>'
+                    for sid, _, title, items, _, _ in sections)
+    links_settings = (f'<a href="#searches" data-tab="searches">Searches'
+                      f'<span class="count">{len(search_rows)}</span></a>')
     demo_note = ('<p class="demo">Demo page: these are fake listings, so the eBay links '
                  'go nowhere.</p>') if demo else ""
     page = f"""<!doctype html>
@@ -378,16 +335,16 @@ def build(path, found, updated, listings, comps, demo=False):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="900"><!-- reload every 15 min to pick up the newest scan -->
-<title>Card Scanner</title>
+<meta http-equiv="refresh" content="600"><!-- reload every 10 min to pick up the newest scan -->
+<title>Lot Spotter</title>
 <style>{CSS}</style>
 </head>
 <body>
 <div class="layout">
   <nav class="side" aria-label="Sections">
-    <p class="title">Card Scanner</p>
-    {group_html("Singles")}
-    {group_html("Lots")}
+    <p class="title">Lot Spotter</p>
+    <details class="group" open><summary>Lots</summary>{links}</details>
+    <details class="group" open><summary>Settings</summary>{links_settings}</details>
     <div class="tools">
       <button type="button" id="expand-all">Expand all</button>
       <button type="button" id="collapse-all">Collapse all</button>
@@ -395,19 +352,26 @@ def build(path, found, updated, listings, comps, demo=False):
   </nav>
   <main>
     <header>
-      <h1>Card Scanner</h1>
-      <div class="muted">Underpriced top-prospect cards on eBay · updated {e(updated)}</div>
+      <h1>Lot Spotter</h1>
+      <div class="muted">Baseball card lots on eBay, scored for top prospects · updated {e(updated)}</div>
       <div class="summary">
-        <span><b>{listings}</b> listings checked</span>
-        <span><b>{comps}</b> sales recorded as comps</span>
+        <span><b>{tracked}</b> lots tracked</span>
+        <span><b>{len(lots)}</b> scored {S["page_min_score"]}+</span>
+        <span><b>{len(newest)}</b> new today</span>
       </div>
     </header>
     {demo_note}
     {"".join(section_html(*s) for s in sections)}
+    <section class="tab" id="tab-searches" data-tab-id="searches" data-count="{len(search_rows)}">
+      <details class="sec" open>
+        <summary><h2>Searches ({len(search_rows)})</h2></summary>
+        {searches_html(search_rows, cfg)}
+      </details>
+    </section>
     <footer>
-      Prices are estimates from recent auction results and asking prices. Before buying,
-      check the photos (condition, centering, fakes), the seller's feedback, and recent sold
-      prices yourself. Auction prices will still rise before they end.
+      Scores are a quick guide, not a price check: eBay doesn't share sold prices through its
+      free API. Before buying, look at the photos (which cards are really in the lot, condition,
+      fakes), the seller's feedback, and recent sold prices yourself.
     </footer>
   </main>
 </div>

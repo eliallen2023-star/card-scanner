@@ -2,10 +2,10 @@ name: card-scan
 
 on:
   schedule:
-    # Every 15 minutes (UTC). Frequent runs see auctions close to their end, so the
-    # recorded sale prices are realistic. (GitHub sometimes starts runs a few minutes late.)
+    # Backup only: GitHub's own schedule is best-effort and often runs hours apart.
+    # An outside timer (cron-job.org) starts the scan every 10 minutes instead.
     - cron: "4,19,34,49 * * * *"
-  workflow_dispatch:          # lets you hit "Run workflow" manually from the Actions tab
+  workflow_dispatch:          # the timer uses this; also the "Run workflow" button in the Actions tab
 
 permissions:
   contents: write             # so the job can save the database and web page
@@ -24,8 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip

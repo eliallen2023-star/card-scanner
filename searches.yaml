@@ -1,0 +1,46 @@
+# ===================== YOUR LOT SEARCHES =====================
+# Each line is one eBay search (at most 100 characters).
+#   Spaces mean AND:      1st bowman lot        -> titles with all three words
+#   (a, b) means OR:      (refractor, refracter) lot -> either spelling, plus "lot"
+# Every search runs twice: newly listed Buy It Now, and auctions ending in the next 3 hours.
+# Lines starting with # are notes and are ignored.
+#
+# To change your searches: edit this file in VS Code and push it, or on github.com open
+# searches.yaml, click the pencil (Edit), change it, and click "Commit changes".
+# The next scan uses the new list. Check the API budget with:  python main.py --budget
+
+# Checked EVERY scan (about every 10 minutes), in the Lots AND Singles categories
+# (many small lots are listed as singles). Keep this list short: it uses the most calls.
+every_scan:
+  - 1st bowman lot
+  - bowman chrome prospect lot
+  - (refractor, refractors) lot bowman
+  - prospect lot (1st, rc, rookie)
+
+# YOUR OWN search terms. Checked every 30 minutes, in the Lots and Singles categories.
+# Add a year, a parallel, a product, a team... anything you'd type into eBay.
+my_searches:
+  - (refracter, refactor) lot
+  - 2025 bowman lot
+
+# Checked every 30 minutes, Lots category.
+every_30_min:
+  - (auto, autos, autograph) lot bowman
+  - (numbered, serial) lot bowman
+  # Misspelled titles: fewer buyers find these, so they tend to sell cheaper.
+  - (bowmen, bowmans, bowmon, prospeckt, propsect, 1st bowmen) lot
+  - (psa, bgs, sgc) lot bowman
+  - (rookie, rc, rookies) lot baseball 2025
+
+# Checked every 2 hours, Lots category.
+every_2_hours:
+  # Vague bulk listings: sellers who don't know what they have.
+  - baseball card (collection, binder, shoebox, box) bowman
+  - bowman (mojo, sapphire, wave, speckle) lot
+  - bowman (base, prospect) lot 2024
+
+# Also every 2 hours, built for you from prospects.yaml:
+#   team searches:   (Brewers, Athletics, Red Sox, Nationals) bowman lot
+#   player searches: lot (Jesus Made, Leo De Vries, Leo DeVries, ...), for the top prospects
+team_searches: true
+player_searches: true
