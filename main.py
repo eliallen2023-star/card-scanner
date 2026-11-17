@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+import feedback
 import notify
 import score
 import webpage
@@ -36,7 +37,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # searches the Singles category (where many small lots are listed).
 GROUPS = {"every_scan": (0, True), "my_searches": (30, True),
           "every_30_min": (30, False), "every_2_hours": (120, False),
-          "teams": (120, False), "players": (120, False)}
+          "teams": (120, False), "players": (120, False),
+          "learned": (30, False)}     # built from your Good / Medium / Bad ratings
 
 
 def load(name):
@@ -79,8 +81,9 @@ def pack(items, extra, per_search=4, max_len=100):
     return [make_query(g, extra) for g in groups]
 
 
-def all_searches(searches, prospects, cfg):
-    """Every search as (group, query). Team and player searches are built from prospects.yaml."""
+def all_searches(searches, prospects, cfg, learned=()):
+    """Every search as (group, query). Team and player searches are built from
+    prospects.yaml; `learned` searches come from your ratings (feedback.py)."""
     out = []
     for group in ("every_scan", "my_searches", "every_30_min", "every_2_hours"):
         for q in searches.get(group) or []:
@@ -98,7 +101,39 @@ def all_searches(searches, prospects, cfg):
         top = sorted(prospects, key=lambda p: p["rank"])[: cfg["spotter"]["player_search_top"]]
         names = [[p["name"]] + list(p.get("aliases") or []) for p in top]
         out += [("players", q) for q in pack(names, "lot", 4, 100)]
+    out += [("learned", q) for q in learned]
     return out
+
+
+def save_rating(store, parser, item_id, label):
+    """Save one rating with what the lot was 'made of'. Only lots the spotter found
+    count, so a made-up rating for some other item is ignored. Returns True if saved."""
+    row = store.spotted_row(item_id)
+    if not row or label not in feedback.LABELS:
+        return False
+    info = score.read_lot(row, store.get_lot_details(item_id), parser)
+    store.save_rating(item_id, label, iso(now()), row["title"], row["search"],
+                      feedback.tokens(info["text"], info["players"]))
+    return True
+
+
+def read_ratings(store, parser, topic):
+    """New ratings from your ntfy ratings topic. Returns how many were saved."""
+    try:
+        new, last = feedback.fetch(topic, store.get_meta("ratings_since"))
+    except Exception as e:
+        print(f"  couldn't read ratings: {e}")
+        return 0
+    saved = sum(save_rating(store, parser, item_id, label) for item_id, label, _ in new)
+    if last:
+        store.set_meta("ratings_since", last)
+    return saved
+
+
+def learn(store, searches, prospects, cfg):
+    """What your ratings say you like, and the new searches that come from it."""
+    existing = [q for _, q in all_searches(searches, prospects, cfg)]
+    return feedback.learn(store.all_ratings(), existing, cfg["spotter"]["learned_searches"])
 
 
 def budget(cfg, searches, prospects):
@@ -118,6 +153,10 @@ def budget(cfg, searches, prospects):
         total += calls
         lines.append(f"  {group:14} {len(qs):2} searches x 2 (BIN + auctions)"
                      f"{' x 2 categories' if singles_too else ''} x {runs:.0f} runs = {calls:,.0f}")
+    n = S["learned_searches"]                   # learned from your ratings, up to this many
+    runs = (24 - quiet) * 2 + night_runs
+    total += n * 2 * runs
+    lines.append(f"  learned        up to {n} searches x 2 (BIN + auctions) x {runs:.0f} runs = {n * 2 * runs:,.0f}")
     lookups = S["detail_lookups_per_run"] * (day_runs + night_runs)
     total += lookups
     lines.append(f"  detail lookups  up to {S['detail_lookups_per_run']} x {day_runs + night_runs:.0f} runs"
@@ -172,6 +211,11 @@ def run(args):
         eb = Ebay(client_id, client_secret, str(S["ship_to_zip"]))
         search, get_details = eb.search, eb.item_details
 
+    # ---- 0. Your ratings: read the new ones, and learn what you like ----
+    fb_topic = None if args.demo else os.environ.get("NTFY_FEEDBACK_TOPIC")
+    rated = read_ratings(store, parser, fb_topic) if fb_topic else 0
+    learned = learn(store, searches, prospects, cfg)
+
     # ---- 1. Run the searches that are due ----
     quiet = in_quiet_hours(cfg) and not args.demo
     # The very first scan finds everything already listed: none of that is "new", so no alerts.
@@ -182,7 +226,7 @@ def run(args):
         print("Quiet hours: searched less than an hour ago, so this run only rebuilds the page.")
     else:
         store.set_meta("last_scan", iso(now()))
-        for group, q in all_searches(searches, prospects, cfg):
+        for group, q in all_searches(searches, prospects, cfg, learned["queries"]):
             every, singles_too = GROUPS[group]
             every = every or S["every_minutes"]   # "every scan" still waits ~10 min, in case
                                                   # two scans start close together
@@ -243,13 +287,24 @@ def run(args):
             store.set_shipping(it["item_id"], details["shipping"])
             it["shipping"], it["shipping_known"] = details["shipping"], True
 
+    if args.demo:
+        # pretend you rated some demo lots, so the demo page shows what learning looks like
+        from demo import DEMO_RATINGS
+        for idx, label in DEMO_RATINGS:
+            save_rating(store, parser, f"v1|demo{idx}|0", label)
+        learned = learn(store, searches, prospects, cfg)
+
     # ---- 3. Score every lot that's still around ----
+    my_ratings = {r["item_id"]: r["label"] for r in store.all_ratings()}
     shown = []
     for it in active:
         details = store.get_lot_details(it["item_id"])
         info = score.read_lot(it, details, parser)
         if score.skip_reason(it, info, cfg, parser.exclude):
             continue
+        it["rating"] = my_ratings.get(it["item_id"])
+        if it["rating"] == "bad":
+            continue                                   # you said it's not for you: hide it
         s, reasons = score.score_lot(it, info, ranks)
         store.set_score(it["item_id"], s, reasons)
         if s >= S["page_min_score"]:
@@ -282,7 +337,8 @@ def run(args):
                     + (f"Prospects: {', '.join(it['players'][:4])}\n" if it["players"] else "")
                     + f"{it['when']}")
             notify.send(os.environ.get("NTFY_TOPIC"), title, body, it["url"], it["image"],
-                        dry_run=testing)
+                        dry_run=testing, feedback_topic=os.environ.get("NTFY_FEEDBACK_TOPIC"),
+                        item_id=it["item_id"])
             if not testing:
                 store.mark_alerted(it["item_id"], info["total"], None, None)
             sent += 1
@@ -295,15 +351,21 @@ def run(args):
     page_path = os.path.join(HERE, "docs", page)
     updated = datetime.now(ZoneInfo(cfg["alerts"]["timezone"])).strftime("%b %d, %Y %I:%M %p %Z")
     search_rows = []
-    for group, q in all_searches(searches, prospects, cfg):
+    by_search = feedback.search_ratings(store.all_ratings())
+    for group, q in all_searches(searches, prospects, cfg, learned["queries"]):
         stats = (store.get_meta(f"stats:{q}") or "|").split("|")
         search_rows.append({"group": group, "q": q, "every": GROUPS[group][0] or S["every_minutes"],
                             "last": store.get_meta(f"last:{group}:{q}"),
-                            "found": stats[0], "kept": stats[1]})
+                            "found": stats[0], "kept": stats[1],
+                            "ratings": by_search.get(q)})
+    # The page's Good / Medium / Bad buttons post to your ratings topic. A demo page
+    # gets buttons too, but they only show how it works (nothing is sent).
     webpage.build(page_path, shown, search_rows, cfg, updated=updated,
-                  tracked=len(active), demo=args.demo)
+                  tracked=len(active), demo=args.demo, learned=learned,
+                  feedback_topic=os.environ.get("NTFY_FEEDBACK_TOPIC") if not args.demo else "demo")
 
     print(f"\nsearches run: {len(ran)} | lots tracked: {len(active)} | new: {len(new_ids)} | "
+          f"ratings read: {rated} (total {learned['rated']}) | learned searches: {len(learned['queries'])} | "
           f"detail lookups: {lookups} | on the page: {len(shown)} | alerts sent: {sent}"
           + (" | quiet hours, alerts held" if quiet else "")
           + (" | first scan: learning what's already listed, no alerts" if first_run else "")

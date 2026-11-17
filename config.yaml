@@ -16,6 +16,7 @@ spotter:
   max_per_tab: 60            # at most this many lots per page tab
   alert_min_score: 60        # phone alert for NEW lots scoring at least this (and Sport checked)
   player_search_top: 24      # player-name searches cover the top N prospects in prospects.yaml
+  learned_searches: 4        # new searches built from your Good/Medium/Bad ratings (every 30 min)
   ship_to_zip: "43210"       # ZIP eBay uses to calculate shipping (Columbus, OH). This file is public.
   repo: eliallen2023-star/card-scanner   # for the "edit your searches" link on the page
 

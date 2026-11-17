@@ -111,10 +111,23 @@ def lot_html(it):
           <p class="names muted">Score: {e(" · ".join(it["reasons"]))}</p>
           <p class="names muted">Found by: <code>{e(it["search"])}</code> · first seen {e(ago(it["first_seen"]))}.
           {checked} Check the photos: lots often hold cheaper cards than the title suggests.</p>
-          <a class="btn" href="{e(it["url"])}" target="_blank" rel="noopener">View on eBay</a>
+          <div class="actions">
+            <a class="btn" href="{e(it["url"])}" target="_blank" rel="noopener">View on eBay</a>
+            {rate_html(it)}
+          </div>
         </div>
       </article>
     </details>"""
+
+
+def rate_html(it):
+    """Good / Medium / Bad buttons. Your saved rating (if any) is highlighted."""
+    buttons = ""
+    for label, name in (("good", "Good"), ("medium", "Medium"), ("bad", "Bad")):
+        chosen = ' class="chosen"' if it.get("rating") == label else ""
+        buttons += f'<button type="button" data-label="{label}"{chosen}>{name}</button>'
+    return (f'<div class="rate" data-id="{e(it["item_id"])}"><span class="muted">Match for you?</span>'
+            f'{buttons}<span class="rate-msg muted"></span></div>')
 
 
 CSS = """
@@ -208,6 +221,16 @@ table.searches th, table.searches td { text-align:left; padding:6px 8px; border-
 table.searches th { color:var(--muted); font-weight:600; font-size:12px; }
 table.searches td.n { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .table-wrap { overflow-x:auto; }
+.actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; }
+.rate { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:13px; }
+.rate button { font:inherit; font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer;
+               background:var(--panel); color:var(--text); border:1px solid var(--line); }
+.rate button:hover { background:var(--bg); }
+.rate button.chosen[data-label=good] { background:var(--good-bg); color:var(--good); border-color:var(--good); }
+.rate button.chosen[data-label=medium] { background:var(--warn-bg); color:var(--warn); border-color:var(--warn); }
+.rate button.chosen[data-label=bad] { background:var(--bg); color:var(--muted); border-color:var(--muted); text-decoration:line-through; }
+.like-list { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; padding:0; list-style:none; }
+.like-list li { background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:13px; }
 .btn { display:inline-block; background:var(--accent); color:var(--accent-text); text-decoration:none;
        font-weight:600; padding:8px 16px; border-radius:8px; }
 .empty { background:var(--panel); border:1px dashed var(--line); border-radius:12px; padding:20px; color:var(--muted); }
@@ -255,9 +278,89 @@ TABS_JS = """
 })();
 """
 
+# Good / Medium / Bad buttons: send "good v1|123|0" to your ntfy ratings topic. The
+# scanner reads it on its next run. Your choice is also remembered in this browser, so
+# it stays highlighted until the next scan saves it. On the demo page nothing is sent.
+RATE_JS = """
+(function () {
+  var topic = document.body.dataset.feedback;
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('lot-spotter-ratings') || '{}'); } catch (e) {}
+  function mark(box, label) {
+    box.querySelectorAll('button').forEach(function (b) {
+      b.classList.toggle('chosen', b.dataset.label === label);
+    });
+  }
+  // the same lot can be on several tabs: update every copy; fold it away if Bad
+  function markAll(id, label) {
+    document.querySelectorAll('.rate').forEach(function (box) {
+      if (box.dataset.id !== id) return;
+      mark(box, label);
+      if (label === 'bad') box.closest('details.item').open = false;
+    });
+  }
+  document.querySelectorAll('.rate').forEach(function (box) {
+    var id = box.dataset.id, msg = box.querySelector('.rate-msg');
+    if (!topic) { box.hidden = true; return; }
+    if (saved[id] && !box.querySelector('.chosen')) mark(box, saved[id]);
+    box.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var label = b.dataset.label;
+        markAll(id, label);
+        saved[id] = label;
+        try { localStorage.setItem('lot-spotter-ratings', JSON.stringify(saved)); } catch (e) {}
+        if (topic === 'demo') { msg.textContent = 'Demo: not sent'; return; }
+        msg.textContent = 'Saving...';
+        fetch('https://ntfy.sh/' + encodeURIComponent(topic), { method: 'POST', body: label + ' ' + id })
+          .then(function (r) {
+            msg.textContent = r.ok ? 'Saved: the next scan learns from it' : 'Could not save (' + r.status + ')';
+          })
+          .catch(function () { msg.textContent = 'Could not save: check your connection'; });
+      });
+    });
+  });
+})();
+"""
+
+
+def ratings_text(c):
+    """'2 good · 1 medium · 3 bad', plus a hint when a search's lots are mostly bad."""
+    if not c:
+        return "-"
+    text = " · ".join(f"{c[k]} {k}" for k in ("good", "medium", "bad") if c.get(k))
+    total = sum(c.values())
+    if total >= 5 and c.get("bad", 0) / total >= 0.7:
+        text += " (mostly bad: consider removing)"
+    return text
+
+
+def learned_html(learned):
+    """The 'What you like' tab: what your ratings taught the spotter."""
+    if not learned or not learned["rated"]:
+        return ('<p class="empty">No ratings yet. Tap Good, Medium or Bad on any lot (or on a '
+                'phone alert). After a few ratings, this shows what you like, and the spotter '
+                'starts its own searches for it.</p>')
+    c = learned["counts"]
+
+    def chips(items):
+        return ('<ul class="like-list">' + "".join(f"<li>{e(t)} ({v:+d})</li>" for t, v in items)
+                + "</ul>") if items else '<p class="muted">Nothing clear yet.</p>'
+    queries = "".join(f"<li><code>{e(q)}</code></li>" for q in learned["queries"])
+    return f"""
+      <p class="intro">You've rated <b>{learned["rated"]}</b> lots: {c.get("good", 0)} good,
+      {c.get("medium", 0)} medium, {c.get("bad", 0)} bad. Good = +2, Medium = +1, Bad = -2 for
+      everything a lot names (prospects, year, product, features). Lots you rate Bad are hidden.</p>
+      <h3>You like</h3>{chips(learned["liked"])}
+      <h3>You pass on</h3>{chips(learned["disliked"])}
+      <h3>New searches from your ratings</h3>
+      {f'<ul>{queries}</ul><p class="muted">These run every 30 minutes and change as you rate more.</p>'
+       if queries else '<p class="muted">None yet: something needs good ratings on at least 2 lots first.</p>'}"""
+
+
 GROUP_NAMES = {"every_scan": "every scan", "my_searches": "my searches",
                "every_30_min": "every 30 min", "every_2_hours": "every 2 hours",
-               "teams": "team (auto)", "players": "players (auto)"}
+               "teams": "team (auto)", "players": "players (auto)",
+               "learned": "learned from your ratings"}
 
 
 def searches_html(rows, cfg):
@@ -265,7 +368,8 @@ def searches_html(rows, cfg):
     body = "".join(
         f'<tr><td><code>{e(r["q"])}</code></td><td>{e(GROUP_NAMES.get(r["group"], r["group"]))}</td>'
         f'<td class="n">{e(ago(r["last"]) or "not yet")}</td>'
-        f'<td class="n">{e(r["found"] or "-")}</td><td class="n">{e(r["kept"] or "-")}</td></tr>'
+        f'<td class="n">{e(r["found"] or "-")}</td><td class="n">{e(r["kept"] or "-")}</td>'
+        f'<td>{e(ratings_text(r.get("ratings")))}</td></tr>'
         for r in rows)
     repo = cfg["spotter"].get("repo")
     edit = (f'<a href="https://github.com/{e(repo)}/edit/main/searches.yaml" target="_blank" '
@@ -277,13 +381,16 @@ def searches_html(rows, cfg):
       Every search looks at newly listed Buy It Now lots and auctions ending in the next
       {cfg["spotter"]["auction_hours"]} hours.</p>
       <div class="table-wrap"><table class="searches">
-        <tr><th>Search</th><th>How often</th><th>Last run</th><th>eBay results</th><th>Lots kept</th></tr>
+        <tr><th>Search</th><th>How often</th><th>Last run</th><th>eBay results</th><th>Lots kept</th>
+            <th>Your ratings</th></tr>
         {body}
       </table></div>"""
 
 
-def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
-    """lots = scored lot dicts from main.py, best score first."""
+def build(path, lots, search_rows, cfg, updated, tracked, demo=False, learned=None,
+          feedback_topic=None):
+    """lots = scored lot dicts from main.py, best score first. feedback_topic = your
+    ntfy ratings topic (the rating buttons post to it; without one they're hidden)."""
     S = cfg["spotter"]
     cap = S["max_per_tab"]
     day_ago = now().timestamp() - 24 * 3600
@@ -326,8 +433,11 @@ def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
 
     links = "".join(f'<a href="#{sid}" data-tab="{sid}">{title}<span class="count">{len(items)}</span></a>'
                     for sid, _, title, items, _, _ in sections)
+    rated = learned["rated"] if learned else 0
     links_settings = (f'<a href="#searches" data-tab="searches">Searches'
-                      f'<span class="count">{len(search_rows)}</span></a>')
+                      f'<span class="count">{len(search_rows)}</span></a>'
+                      f'<a href="#likes" data-tab="likes">What you like'
+                      f'<span class="count">{rated}</span></a>')
     demo_note = ('<p class="demo">Demo page: these are fake listings, so the eBay links '
                  'go nowhere.</p>') if demo else ""
     page = f"""<!doctype html>
@@ -339,7 +449,7 @@ def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
 <title>Lot Spotter</title>
 <style>{CSS}</style>
 </head>
-<body>
+<body data-feedback="{e(feedback_topic or "")}">
 <div class="layout">
   <nav class="side" aria-label="Sections">
     <p class="title">Lot Spotter</p>
@@ -368,6 +478,12 @@ def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
         {searches_html(search_rows, cfg)}
       </details>
     </section>
+    <section class="tab" id="tab-likes" data-tab-id="likes" data-count="{rated}">
+      <details class="sec" open>
+        <summary><h2>What you like ({rated} rated)</h2></summary>
+        {learned_html(learned)}
+      </details>
+    </section>
     <footer>
       Scores are a quick guide, not a price check: eBay doesn't share sold prices through its
       free API. Before buying, look at the photos (which cards are really in the lot, condition,
@@ -375,7 +491,7 @@ def build(path, lots, search_rows, cfg, updated, tracked, demo=False):
     </footer>
   </main>
 </div>
-<script>{TABS_JS}</script>
+<script>{TABS_JS}{RATE_JS}</script>
 </body>
 </html>
 """

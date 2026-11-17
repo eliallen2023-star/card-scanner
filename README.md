@@ -22,6 +22,18 @@ It uses only eBay's official Browse API (no scraping) and plain code for scoring
    outside quiet hours (11pm-8am). The very first scan sends none.
 5. **Web page** tabs: Top lots, New (last 24 h), Auctions ending soon, $1 a card or less, Searches.
 
+## Rate lots: Good / Medium / Bad (it learns from you)
+Every lot on the page, and every phone alert, has **Good / Medium / Bad** buttons. A rating is
+sent to a second ntfy topic (`NTFY_FEEDBACK_TOPIC`), and the next scan saves it (`feedback.py`):
+- It counts what the lots you rate have in common (prospects, year, product, features such as
+  Mojo, auto, PSA 10). Good = +2, Medium = +1, Bad = -2; something needs 2+ liked lots to count.
+- From that it builds up to `learned_searches` (4) **new searches**, run every 30 minutes.
+- The **What you like** tab shows what it learned; the **Searches** tab shows how you rated each
+  search's lots (and suggests removing searches whose lots you mostly rate Bad).
+- Lots you rate Bad are hidden. Only ratings for lots the spotter found are accepted.
+Note: the ratings topic name is in the public page's code, so someone who finds your site could
+send fake ratings. ntfy.sh keeps messages about 12 hours, so ratings are read well before then.
+
 ## Run it on your computer (Windows PowerShell, Python 3.13)
 ```powershell
 py -3.13 -m venv .venv
@@ -30,7 +42,7 @@ py -3.13 -m venv .venv
 .venv\Scripts\python.exe main.py --budget    # API calls per day your searches use (limit 5,000)
 .venv\Scripts\python.exe main.py --dry-run   # real eBay search, alerts printed: docs\preview.html
 ```
-Tests: `test_score.py`, `test_parse.py`, `test_lots.py`, `test_paste.py`.
+Tests: `test_score.py`, `test_feedback.py`, `test_parse.py`, `test_lots.py`, `test_paste.py`.
 
 The dry run needs eBay API keys in the environment variables `EBAY_CLIENT_ID` and
 `EBAY_CLIENT_SECRET` (developer.ebay.com, Production keyset). Never put keys in a file.

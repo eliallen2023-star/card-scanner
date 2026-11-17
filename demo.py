@@ -26,6 +26,10 @@ LIVE = [  # (title, type, price, shipping (None = not in search results), bids,
     ("2025 Bowman REPRINT lot custom Jesus Made", "FIXED_PRICE", 5.00, 1.00, 0, None, 10),
 ]
 
+# Pretend ratings (index into LIVE), so the demo page shows what learning looks like:
+# you liked the 1st Bowman lots with top prospects, and passed on the vague binder.
+DEMO_RATINGS = [(0, "good"), (2, "good"), (1, "medium"), (4, "bad"), (6, "bad")]
+
 # What item_details() would return (index into LIVE)
 DETAILS = {
     0: {"shipping": 4.00, "players": ["Jesus Made", "Eli Willits", "Leo De Vries"], "count": 25,

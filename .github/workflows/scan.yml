@@ -46,6 +46,7 @@ jobs:
           EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
           EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_FEEDBACK_TOPIC: ${{ secrets.NTFY_FEEDBACK_TOPIC }}   # your Good/Medium/Bad ratings
         run: python main.py
 
       - name: Save database and web page

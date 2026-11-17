@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS spotted (
   item_id TEXT PRIMARY KEY, title TEXT, buying TEXT, price REAL, shipping REAL,
   shipping_known INT, bid_count INT, end_time TEXT, listed TEXT, url TEXT, image TEXT,
   search TEXT, first_seen TEXT, last_seen TEXT, score INT, reasons TEXT);
+-- Your Good / Medium / Bad ratings (kept for good: the spotter learns from them).
+CREATE TABLE IF NOT EXISTS ratings (
+  item_id TEXT PRIMARY KEY, label TEXT, rated_at TEXT, title TEXT, search TEXT, tokens TEXT);
 CREATE INDEX IF NOT EXISTS comps_key ON comps(card_key);
 CREATE INDEX IF NOT EXISTS comps_key2 ON comps(key_noyear);
 """
@@ -122,6 +125,20 @@ class Store:
             d["reasons"] = json.loads(d["reasons"] or "[]")
             out.append(d)
         return out
+
+    def spotted_row(self, item_id):
+        r = self.db.execute("SELECT * FROM spotted WHERE item_id=?", (item_id,)).fetchone()
+        return dict(r) if r else None
+
+    def save_rating(self, item_id, label, rated_at, title, search, tokens):
+        """Your newest rating of a lot replaces an older one."""
+        self.db.execute("INSERT OR REPLACE INTO ratings VALUES (?,?,?,?,?,?)",
+                        (item_id, label, rated_at, title, search, json.dumps(sorted(tokens))))
+
+    def all_ratings(self):
+        return [{"item_id": r["item_id"], "label": r["label"], "title": r["title"],
+                 "search": r["search"], "tokens": json.loads(r["tokens"])}
+                for r in self.db.execute("SELECT * FROM ratings ORDER BY rated_at")]
 
     def set_score(self, item_id, score, reasons):
         self.db.execute("UPDATE spotted SET score=?, reasons=? WHERE item_id=?",
