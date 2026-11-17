@@ -184,6 +184,8 @@ def run(args):
         store.set_meta("last_scan", iso(now()))
         for group, q in all_searches(searches, prospects, cfg):
             every, singles_too = GROUPS[group]
+            every = every or S["every_minutes"]   # "every scan" still waits ~10 min, in case
+                                                  # two scans start close together
             key = f"last:{group}:{q}"
             # due? (a few minutes' slack, because the timer doesn't fire exactly on time)
             if not args.demo and minutes_since(store, key) < every - 3:

@@ -4,7 +4,7 @@ on:
   schedule:
     # Backup only: GitHub's own schedule is best-effort and often runs hours apart.
     # An outside timer (cron-job.org) starts the scan every 10 minutes instead.
-    - cron: "4,19,34,49 * * * *"
+    - cron: "37 * * * *"       # about once an hour, in case the timer stops
   workflow_dispatch:          # the timer uses this; also the "Run workflow" button in the Actions tab
 
 permissions:
