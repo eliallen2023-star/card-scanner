@@ -25,7 +25,7 @@ It uses only eBay's official Browse API (no scraping) and plain code for scoring
    stricter price points, seller feedback under 50 +5, auction ending 1-6 AM Eastern with 0-2
    bids +5, risers +8, and your own sold prices / sell-through (below). The page shows why each
    lot got its score.
-4. **Alerts**: new lots scoring `alert_min_score` (70) or more, first seen in the last 12 hours,
+4. **Alerts**: new lots scoring `alert_min_score` (55) or more, first seen in the last 12 hours,
    outside quiet hours (11pm-8am). The very first scan sends none.
 5. **Web page** tabs: Top lots, New (last 24 h), Auctions ending soon, $1 a card or less,
    Make an offer (Best Offer lots listed 7+ days ago), Trending (from our own scans: lots and

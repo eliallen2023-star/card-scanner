@@ -7,4 +7,5 @@
 # Format:  - {name: "First Last", note: "why", aliases: ["Other Spelling"]}   (note/aliases optional)
 
 risers:
-  - {name: "Rainiel Rodriguez", note: "Example: catcher, strong 2026 season. Replace with your own picks."}
+  - {name: "Max Clark", note: "Dropped off the Top 100 in Nov 2026 (likely graduated), but his lots still sell a lot. Delete if you don't want him.", aliases: ["Max Clarke"]}
+  - {name: "Angel Genao", note: "Dropped off the Top 100 in Nov 2026. Delete if you don't want him."}
