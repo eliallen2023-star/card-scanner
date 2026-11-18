@@ -20,7 +20,7 @@ spotter:
                              # fresh (auctions stay until they end; they're only shown in their last hours)
   page_min_score: 20         # lots scoring less than this don't go on the page
   max_per_tab: 60            # at most this many lots per page tab
-  alert_min_score: 55        # about 30 alerts a day (60 = ~20, 65 = ~14, 70 = ~9). Phone alert for NEW lots scoring at least this (and Sport checked)
+  alert_min_score: 60        # about 20 alerts a day (55 = ~30, 65 = ~14, 70 = ~9). Phone alert for NEW lots scoring at least this (and Sport checked)
   player_search_top: 24      # player-name searches cover the top N prospects in prospects.yaml
   learned_searches: 4        # new searches built from your Good/Medium/Bad ratings (every 30 min)
   ship_to_zip: "43210"       # ZIP eBay uses to calculate shipping (Columbus, OH). This file is public.
