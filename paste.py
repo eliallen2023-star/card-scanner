@@ -74,7 +74,8 @@ CARD_WORDS = re.compile(
 EVERYDAY_WORDS = {"made", "white", "booth", "lackey", "clark", "green", "young", "king",
                   "rice", "price", "story", "may", "will", "banks", "walker", "wells",
                   "bell", "rose", "house", "mann", "cross", "short", "ford", "hill",
-                  "little", "black", "brown", "gray", "grant", "cash", "law", "page"}
+                  "little", "black", "brown", "gray", "grant", "cash", "law", "page",
+                  "hunter", "irish", "miller", "perry", "ryan", "lombard", "level"}
 TEAMS = re.compile(r"\b(red|white)\s+sox\b|\bblue\s+jays\b", re.I)
 SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii"}
 

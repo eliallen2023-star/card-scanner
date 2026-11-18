@@ -4,8 +4,9 @@ Plain code on purpose (no AI): each part adds points, and every point is explain
 on the web page so you can see WHY a lot scored what it did. Change the numbers
 here if your experience says otherwise.
 
-  Prospects named   up to 45   #1 prospect = 25, #25 = 13, #50 = 0.5 (added up for each one)
-  Card types        up to 30   1st Bowman 15, auto 10, numbered 6, graded 4, refractor/color 4, ...
+  Prospects named   up to 50   #1 prospect = 30, #25 = 23, #50 = 15, #100 = 0.3 (added up)
+  Card types        up to 35   1st Bowman 20, auto 10, numbered 6, graded 4, refractor/color 4, ...
+  Prospect 1st        +10      a prospect from your list AND a 1st Bowman in the same lot
   Price per card    up to 20   $0.50 or less = 20, $1 = 15, $2 = 10, $3 = 6, $5 = 3
   Fresh             up to  5   Buy It Now listed in the last hour, or an auction ending
                                within the hour with no bids
@@ -16,6 +17,8 @@ here if your experience says otherwise.
   Your sold prices  +5 / +10   named cards' sold prices (manual_comps.csv) cover the price / 1.5x
   Sell-through      up to  3   a named player's sell_through over 50% (+1 per 10 points)
   Riser                +8      each player from risers.yaml
+  Other sport         -15      football/basketball words, but a prospect is named (no prospect:
+                               the lot is skipped)
 """
 import re
 from zoneinfo import ZoneInfo
@@ -31,7 +34,7 @@ LOT_WORDS = re.compile(r"\blots?\b|\bbundle\b|\bcollection\b|\b\d+\s*(card|cards
 COLORS = r"gold|orange|red|purple|blue|green|aqua|black|pink|sapphire|atomic|speckle|mojo|shimmer|wave|lava|superfractor"
 FEATURES = [  # (name, points, pattern) - checked against the title + item specifics + description
     # "1st Edition" / "1st Ed." is a product name, not a first card
-    ("1st Bowman", 15, r"\b1st\b(?! ?ed\b| ?edition).{0,20}\bbowman\b|\bbowman\b.{0,30}\b1st\b(?! ?ed\b| ?edition)"),
+    ("1st Bowman", 20, r"\b1st\b(?! ?ed\b| ?edition).{0,20}\bbowman\b|\bbowman\b.{0,30}\b1st\b(?! ?ed\b| ?edition)"),
     ("1st", 8, r"\b(1st|first)\b(?! ?ed\b| ?edition)"),   # only counts if not already 1st Bowman
     ("Auto", 10, r"\b(auto|autos|autograph|autographs|autographed)\b"),
     ("Numbered", 6, r"(?<![\w$])/\s?\d{1,4}\b|#'?d\b|\bnumbered\b|\bserial\b"),
@@ -48,10 +51,33 @@ SAME_CARD = re.compile(r"\bsame (card|player)\b|\bidentical\b|\bcopies\b"
 SAME_CARD_MIN = 5
 SAME_CARD_PENALTY = 10
 
-MAX = {"prospects": 45, "cards": 30, "price": 20, "fresh": 5}
+MAX = {"prospects": 50, "cards": 35, "price": 20, "fresh": 5}
+PROSPECT_1ST = 10                      # a prospect AND a 1st Bowman in the lot: +10
 STALE_DAYS, STALE_PENALTY = 7, 10      # Buy It Now listed over 7 days ago: -10
 NEW_SELLER = 50                        # seller feedback under this: +5 (often underprice)
 RISER_POINTS = 8                       # each player from risers.yaml in the lot: +8
+
+
+# Other sports in the title. Bowman also makes football and basketball cards ("Bowman U",
+# "Bowman Chrome Football") that say "1st Bowman", so the broad searches find them.
+# Team names: only ones no baseball team or card set shares (no Giants, Cardinals, Rangers,
+# Bulls = Durham Bulls, Heat, Thunder, Bears, Lions...).
+OTHER_SPORTS = re.compile(
+    r"\b(football|basketball|hockey|soccer|nfl|nba|wnba|nhl|ncaa|ncaaf|ncaab|ufc|wwe|f1|"
+    r"bowman u|bowman university|bowman chrome u|bowman u chrome|panini prizm draft picks|"
+    r"qb|quarterback|wide receiver|running back|touchdown|"
+    r"cowboys|chiefs|eagles|packers|steelers|patriots|49ers|bengals|ravens|dolphins|"
+    r"broncos|raiders|chargers|seahawks|vikings|saints|falcons|buccaneers|commanders|"
+    r"jaguars|lakers|celtics|warriors|knicks|bucks|mavericks|nuggets|clippers|76ers|sixers|"
+    r"raptors|grizzlies|pelicans|timberwolves|cavaliers|pistons|pacers|trail blazers)\b")
+OTHER_SPORT_PENALTY = 15     # a baseball prospect named, but other-sport words too: -15
+
+
+def other_sport(title):
+    """'football', 'Bowman U', 'Lakers'... in a title that doesn't also say baseball."""
+    t = norm(title)
+    m = OTHER_SPORTS.search(t)
+    return m.group(0) if m and "baseball" not in t and " mlb " not in f" {t} " else None
 
 
 def late_night(it, tz="America/New_York"):
@@ -93,6 +119,11 @@ def skip_reason(it, info, cfg, exclude_words):
             return f"excluded word: {w.strip()}"
     if info["sport"] and "baseball" not in info["sport"]:
         return f"sport is {info['sport']}"            # football/basketball lots get through keywords
+    # Other sports in the title: skipped, unless it also names one of your prospects
+    # (then it's only marked down, in score_lot, because a team word can be a coincidence).
+    word = other_sport(it["title"])
+    if word and not info["players"]:
+        return f"looks like another sport ({word})"
     if info["total"] > S["max_price"]:
         return "over the max price"
     # Pricey per card is fine for a small lot of good prospect cards (2 autos at $20 each);
@@ -145,7 +176,7 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
         if p not in ranks:
             continue                  # a riser who isn't on the prospect list: see part 6
         rank = ranks[p]
-        add = (51 - rank) / 50 * 25
+        add = (101 - rank) / 100 * 30         # #1 = 30, #50 = 15, #100 = 0.3
         pts += add
         reasons.append(f"#{rank} {p.title()} +{add:.0f}")
     parts["prospects"] = min(pts, MAX["prospects"])
@@ -160,6 +191,10 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
             pts += add
             reasons.append(f"{name} +{add}")
     parts["cards"] = min(pts, MAX["cards"])
+    # The cards worth the most: a 1st Bowman of a ranked prospect.
+    if "1st Bowman" in found and any(p in ranks for p in info["players"]):
+        parts["cards"] += PROSPECT_1ST
+        reasons.append(f"prospect + 1st Bowman +{PROSPECT_1ST}")
 
     # 3. Price per card (price + shipping, divided by the number of cards).
     per = info["per_card"]
@@ -206,6 +241,11 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
     if late_night(it, tz):
         parts["extra"] += 5
         reasons.append("ends 1-6 AM Eastern with few bids +5")
+
+    word = other_sport(it["title"])
+    if word:
+        parts["extra"] -= OTHER_SPORT_PENALTY
+        reasons.append(f"other-sport word ({word}) -{OTHER_SPORT_PENALTY}")
 
     # 6. Your own research: sold prices / sell-through you typed in, and your risers.
     add, why = manual.points(info, market)

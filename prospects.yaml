@@ -1,4 +1,4 @@
-# MLB Pipeline Top 100 (updated Aug 13, 2026), top 50.
+# MLB Pipeline Top 100 (1-49 from Aug 13, 2026; 50-100 pasted 2026-11-18).
 # Ranks marked "confirmed" were checked against mlb.com; the article didn't
 # list every rank, so a few slots are missing. Check https://www.mlb.com/prospects/top100
 # and fill them in. Pipeline updates the list again in January, so refresh it then.
@@ -10,7 +10,7 @@
 # updated: change this date whenever you update the list (shown on the Prospect news tab;
 #          every January the page reminds you to refresh it).
 
-updated: 2026-08-13
+updated: 2026-11-18
 
 prospects:
   - {rank: 1,  name: "Jesus Made",        team: Brewers,   pos: SS}
@@ -49,19 +49,70 @@ prospects:
   - {rank: 46, name: "Tyler Bremner",     team: Angels,    pos: RHP}
   - {rank: 47, name: "Jhonny Level",      team: Giants,    pos: SS}
   - {rank: 49, name: "Anthony Eyanson",   team: Orioles,   pos: RHP}
-  - {rank: 50, name: "Felnin Celesten",   team: Mariners,  pos: SS}
 
-  # --- Missing ranks: 14, 18, 20, 22, 25, 26, 28, 34, 35, 43, 44, 45, 48 ---
+  # --- 50-100 (from the MLB Pipeline list pasted 2026-11-18). Scored only, not searched by
+  #     name (player_search_top in config.yaml), to save API calls. ---
+  - {rank: 50,  name: "Kendry Chourio",     team: Royals,    pos: RHP}
+  - {rank: 51,  name: "Seaver King",        team: Nationals, pos: SS}
+  - {rank: 52,  name: "Roldy Brito",        team: Rockies,   pos: OF}
+  - {rank: 53,  name: "Lazaro Montes",      team: Mariners,  pos: OF}
+  - {rank: 54,  name: "Marek Houston",      team: Twins,     pos: SS}
+  - {rank: 55,  name: "Jamie Arnold",       team: Athletics, pos: LHP}
+  - {rank: 56,  name: "Charlie Condon",     team: Rockies,   pos: 1B}
+  - {rank: 57,  name: "Joshua Baez",        team: Cardinals, pos: OF, aliases: ["Josh Baez"]}
+  - {rank: 58,  name: "Tate Southisene",    team: Braves,    pos: SS}
+  - {rank: 59,  name: "Aidan Miller",       team: Phillies,  pos: SS}
+  - {rank: 60,  name: "Felnin Celesten",    team: Mariners,  pos: SS}
+  - {rank: 61,  name: "Aiva Arquette",      team: Marlins,   pos: SS}
+  - {rank: 62,  name: "Tyler Bell",         team: Rockies,   pos: SS}
+  - {rank: 63,  name: "Nathan Flewelling",  team: Rays,      pos: C}
+  - {rank: 64,  name: "River Ryan",         team: Tigers,    pos: RHP}
+  - {rank: 65,  name: "Jacob Lombard",      team: Marlins,   pos: SS}
+  - {rank: 66,  name: "Jarlin Susana",      team: Nationals, pos: RHP}
+  - {rank: 67,  name: "Braylon Doughty",    team: Guardians, pos: RHP}
+  - {rank: 68,  name: "Jefferson Rojas",    team: Mets,      pos: 3B}
+  - {rank: 69,  name: "Joseph Dzierwa",     team: Orioles,   pos: LHP}
+  - {rank: 70,  name: "Caden Scarborough",  team: Rangers,   pos: RHP}
+  - {rank: 71,  name: "Justin Gonzales",    team: "Red Sox", pos: OF}
+  - {rank: 72,  name: "Kevin Alvarez",      team: Astros,    pos: OF}
+  - {rank: 73,  name: "Francisco Renteria", team: Phillies,  pos: OF}
+  - {rank: 74,  name: "Juneiker Caceres",   team: Guardians, pos: OF}
+  - {rank: 75,  name: "Cooper Flemming",    team: Rays,      pos: INF}
+  - {rank: 76,  name: "Angeibel Gomez",     team: Royals,    pos: OF}
+  - {rank: 77,  name: "Cam Cannarella",     team: Marlins,   pos: OF}
+  - {rank: 78,  name: "Dax Kilby",          team: Yankees,   pos: SS}
+  - {rank: 79,  name: "Charles Davalan",    team: Dodgers,   pos: OF}
+  - {rank: 80,  name: "Leo Bernal",         team: Cardinals, pos: C}
+  - {rank: 81,  name: "Billy Carlson",      team: "White Sox", pos: SS}
+  - {rank: 82,  name: "Josh Hammond",       team: Royals,    pos: SS}
+  - {rank: 83,  name: "Jonny Farmelo",      team: Mariners,  pos: OF}
+  - {rank: 84,  name: "Demetrio Crisantes", team: Diamondbacks, pos: 2B}
+  - {rank: 85,  name: "Josh Adamczewski",   team: Brewers,   pos: OF}
+  - {rank: 86,  name: "Josue Briceno",      team: Tigers,    pos: C}
+  - {rank: 87,  name: "Derek Curiel",       team: Pirates,   pos: OF}
+  - {rank: 88,  name: "Owen Ayers",         team: Cubs,      pos: C}
+  - {rank: 89,  name: "Murf Gray",          team: Pirates,   pos: 3B}
+  - {rank: 90,  name: "Nolan Perry",        team: "Blue Jays", pos: RHP}
+  - {rank: 91,  name: "Gio Rojas",          team: Rangers,   pos: LHP}
+  - {rank: 92,  name: "Caden Hunter",       team: Orioles,   pos: LHP}
+  - {rank: 93,  name: "Brady Ebel",         team: Brewers,   pos: SS}
+  - {rank: 94,  name: "Ramon Marquez",      team: Giants,    pos: RHP}
+  - {rank: 95,  name: "Ike Irish",          team: Orioles,   pos: OF}
+  - {rank: 96,  name: "Bryan Rincon",       team: Phillies,  pos: SS}
+  - {rank: 97,  name: "Taitn Gray",         team: Rays,      pos: 1B}
+  - {rank: 98,  name: "Hayden Alvarez",     team: Angels,    pos: OF}
+  - {rank: 99,  name: "Enddy Azocar",       team: Orioles,   pos: OF}
+  - {rank: 100, name: "Xavier Neyens",      team: Astros,    pos: 3B}
+
+  # --- Missing ranks: 14, 18, 20, 22, 25, 26, 28, 34, 35, 43, 44, 45, 48 (top 50) ---
   # Other MLB Pipeline articles call these players Top 100 / top-at-position
   # prospects, but I couldn't confirm their exact rank. Check the official
   # list and uncomment the ones that belong in the top 50:
   # - {rank: 0, name: "Rainiel Rodriguez",  team: Cardinals,    pos: C}
   # - {rank: 0, name: "Andrew Fischer",     team: Brewers,      pos: 3B}
-  # - {rank: 0, name: "Demetrio Crisantes", team: Diamondbacks, pos: 2B}
   # - {rank: 0, name: "Eduardo Quintero",   team: Dodgers,      pos: OF}
   # - {rank: 0, name: "Zyhir Hope",         team: Tigers,       pos: OF}
   # - {rank: 0, name: "Cam Caminiti",       team: Braves,       pos: LHP}
   # - {rank: 0, name: "Liam Doyle",         team: Cardinals,    pos: LHP}
   # - {rank: 0, name: "Robby Snelling",     team: Marlins,      pos: LHP}
-  # - {rank: 0, name: "Jamie Arnold",       team: Athletics,    pos: LHP}
   # - {rank: 0, name: "Travis Sykora",      team: Nationals,    pos: RHP}

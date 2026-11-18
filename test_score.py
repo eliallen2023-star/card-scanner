@@ -25,7 +25,7 @@ def lot(title, price=20.0, ship=5.0, buying="BIN", details=None, listed_min=600)
 def test_top_prospects_score_higher():
     a = score.score_lot(*lot("Jesus Made 1st Bowman lot of 10"), RANKS)[0]
     b = score.score_lot(*lot("Thomas White 1st Bowman lot of 10"), RANKS)[0]
-    assert a > b + 20
+    assert a > b + 12                      # #1 = 30 points, #50 = 15
 
 
 def test_price_per_card_points():
@@ -36,7 +36,7 @@ def test_price_per_card_points():
 
 def test_first_bowman_counted_once():
     _, reasons = score.score_lot(*lot("2025 Bowman 1st Bowman Chrome lot of 5"), RANKS)
-    assert "1st Bowman +15" in reasons and not any(r.startswith("1st +") for r in reasons)
+    assert "1st Bowman +20" in reasons and not any(r.startswith("1st +") for r in reasons)
     _, reasons = score.score_lot(*lot("Topps Chrome 1st Ed. Rookie lot of 7"), RANKS)
     assert not any(r.startswith("1st") for r in reasons)
 
@@ -118,6 +118,32 @@ def test_january_banner():
     import webpage
     assert webpage.january_banner(date(2027, 1, 15))
     assert not webpage.january_banner(date(2026, 11, 17))
+
+
+def test_other_sports():
+    # football / basketball in the title, no prospect: skipped before any detail lookup
+    for title in ("2026 Bowman Chrome Football 1st Bowman lot of 29",
+                  "Topps 2024 Bowman U Chrome 1st Bowman RC lot (15)",
+                  "Lakers Celtics rookie lot 50 cards"):
+        it, info = lot(title)
+        assert score.skip_reason(it, info, CFG, [])
+    # baseball words win, and baseball-only team names (Bulls, Giants) are fine
+    for title in ("Bowman 1st lot 20 cards baseball football mixed", "Durham Bulls 1st Bowman lot of 10",
+                  "Giants prospect 1st Bowman lot of 10"):
+        it, info = lot(title)
+        assert not score.skip_reason(it, info, CFG, []), title
+    # names a prospect: kept but marked down
+    it, info = lot("Jesus Made 1st Bowman + NFL rookie lot of 10")
+    s, reasons = score.score_lot(it, info, RANKS)
+    assert any(r.startswith("other-sport word") for r in reasons)
+
+
+def test_prospect_first_bowman_bonus():
+    a, ainfo = lot("Jesus Made 1st Bowman lot of 10")
+    _, reasons = score.score_lot(a, ainfo, RANKS)
+    assert "prospect + 1st Bowman +10" in reasons
+    b, binfo = lot("Prospect 1st Bowman lot of 10")          # no prospect from the list
+    assert "prospect + 1st Bowman +10" not in score.score_lot(b, binfo, RANKS)[1]
 
 
 def test_skips():
