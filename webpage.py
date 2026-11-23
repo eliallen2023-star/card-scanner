@@ -185,7 +185,7 @@ def toolbar_html(items):
 def tags_html(it):
     """Small labels: 1st, Auto, Refractor, Best Offer, Same-card bulk, ..."""
     def cls(t):
-        return {"1st": " t-1st", "Auto": " t-auto", "Refractor": " t-ref"}.get(t, "")
+        return {"1st": " t-1st", "Auto": " t-auto", "Shiny": " t-ref"}.get(t, "")
     return "".join(f'<span class="tag{cls(t)}">{e(t)}</span>' for t in it.get("tags", []))
 
 

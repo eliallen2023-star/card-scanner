@@ -4,11 +4,13 @@ Plain code on purpose (no AI): each part adds points, and every point is explain
 on the web page so you can see WHY a lot scored what it did. Change the numbers
 here if your experience says otherwise.
 
-  Prospects named   up to 40   #1 prospect = 30, #25 = 23, #50 = 15, #100 = 0.3 (added up)
-  Card types        up to 35   1st Bowman 20, auto 10, numbered 6, graded 4, refractor/color 4, ...
+  Prospects named   up to 30   #1 prospect = 30, #25 = 23, #50 = 15, #100 = 0.3 (added up)
+  Card types        up to 35   1st Bowman 20, auto 10, numbered 6, graded 4, color 3, ...
                                (1st Bowman only in the description, not the title: 8)
   Prospect 1st        +10      a prospect from your list AND a 1st Bowman in the title
-  Bowman Chrome       +10      the title says Bowman Chrome (or BCP / BDC card numbers)
+  Shiny cards     +8/+12/+15   refractor, mojo, x-fractor, shimmer, sparkle, wave, sapphire...
+                               (1 kind / 2 kinds / 3+ kinds; title, item specifics, description)
+  Bowman Chrome       +10     the title says Bowman Chrome (or BCP / BDC card numbers)
   Not Bowman          -10      the title doesn't say Bowman at all (mostly Topps / other sets)
   Team lot            -15      the title names one MLB team and it's 10+ cards (mostly base
                                cards of that team with a prospect or two mixed in)
@@ -48,7 +50,7 @@ FEATURES = [  # (name, points, pattern) - checked against the title + item speci
     ("Auto", 10, r"\b(auto|autos|autograph|autographs|autographed)\b"),
     ("Numbered", 6, r"(?<![\w$])/\s?\d{1,4}\b|#'?d\b|\bnumbered\b|\bserial\b"),
     ("Graded", 4, r"\b(psa|bgs|sgc|cgc)\s?\d"),
-    ("Refractor/color", 4, r"\brefractors?\b|\bx-?fractor\b|\b(" + COLORS + r")\b"),
+    ("Color", 3, r"\b(" + COLORS + r")\b"),     # gold / orange / red ... (shiny words: SHINY)
     ("Chrome", 3, r"\bchrome\b"),
     ("RC", 3, r"\b(rc|rcs|rookie|rookies)\b"),
 ]
@@ -61,7 +63,7 @@ SAME_CARD = re.compile(r"\bsame (card|player)\b|\bidentical\b|\bcopies\b"
 SAME_CARD_MIN = 5
 SAME_CARD_PENALTY = 20
 
-MAX = {"prospects": 40, "cards": 35, "price": 12, "fresh": 5}
+MAX = {"prospects": 30, "cards": 35, "price": 12, "fresh": 5}
 PROSPECT_1ST = 10                      # a prospect AND a 1st Bowman in the title: +10
 FIRST_BOWMAN_DESC = 8                  # "1st Bowman" only in the description / item specifics
 
@@ -80,6 +82,33 @@ MLB_TEAMS = re.compile(
     r"twins|astros|angels|athletics|mariners|rangers|braves|marlins|mets|phillies|nationals|"
     r"cubs|reds|brewers|pirates|cardinals|diamondbacks|d-?backs|rockies|dodgers|giants|padres)\b")
 TEAM_LOT_MIN, TEAM_LOT_PENALTY = 10, 15
+
+# Shiny cards (refractors and other parallels) resell best. Found in the title, eBay's
+# Features item specific, or the description. More KINDS of shiny = more points:
+# 1 kind +8, 2 kinds +12, 3 or more +15. (Not part of the 35-point card-type cap.)
+SHINY = {
+    "refractor": r"\brefractors?\b|\brefs?\b",
+    "x-fractor": r"\bx-?fractors?\b",
+    "mojo": r"\bmojos?\b",
+    "shimmer": r"\bshimmers?\b",
+    "sparkle": r"\bsparkles?\b",
+    "speckle": r"\bspeckles?\b",
+    "wave": r"\b(ray ?)?waves?\b",
+    "lava": r"\blavas?\b",
+    "atomic": r"\batomics?\b",
+    "sapphire": r"\bsapphires?\b",
+    "geometric": r"\bgeometrics?\b",
+    "laser": r"\bla[sz]ers?\b",
+    "lunar": r"\blunar\b",
+    "reptilian": r"\breptilian\b",
+    "cracked ice": r"\bcracked ice\b",
+    "mini diamond": r"\bmini[ -]?diamonds?\b",
+    "superfractor": r"\bsuperfractors?\b",
+    "foil / holo": r"\bfoils?\b|\bholo(graphic)?\b",
+    "parallel": r"\bparallels?\b",
+}
+SHINY_POINTS = {1: 8, 2: 12}            # 3 or more kinds: SHINY_MAX
+SHINY_MAX = 15
 
 # Other sets in the title ("Bowman Chrome/Mosaic", "Pro Debut Heritage"): a mixed pile, not
 # a Bowman lot. (Topps Chrome and Finest aren't here: you rated lots with those Good.)
@@ -175,16 +204,20 @@ def looks_like_lot(title):
 
 
 TAG_FROM_REASON = {"1st Bowman": "1st", "1st": "1st", "Auto": "Auto",
-                   "Refractor/color": "Refractor", "Numbered": "Numbered", "Graded": "Graded"}
+                   "Numbered": "Numbered", "Graded": "Graded"}
 
 
 def tags(it, info, reasons, tz="America/New_York"):
-    """Short labels for the page: 1st, Auto, Refractor, Best Offer, Same-card bulk, ..."""
+    """Short labels for the page: 1st, Auto, Shiny, Best Offer, Same-card bulk, ..."""
     out = []
     for r in reasons:
         name = r.rsplit(" ", 1)[0]               # "1st Bowman +15" -> "1st Bowman"
         if name in TAG_FROM_REASON:
             out.append(TAG_FROM_REASON[name])
+        if name.startswith("1st Bowman (description"):
+            out.append("1st")
+        if r.startswith("shiny: "):
+            out.append("Shiny")
     if info.get("same_card"):
         out.append("Same-card bulk")
     if it.get("best_offer"):
@@ -243,6 +276,12 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
     elif not ANY_BOWMAN.search(title):
         parts["cards"] -= NOT_BOWMAN_PENALTY
         reasons.append(f"title doesn't say Bowman -{NOT_BOWMAN_PENALTY}")
+    # Shiny cards: refractors, mojos, shimmers... (title, item specifics, description)
+    shiny = [name for name, pattern in SHINY.items() if re.search(pattern, text)]
+    if shiny:
+        add = SHINY_POINTS.get(len(shiny), SHINY_MAX)
+        parts["cards"] += add
+        reasons.append(f"shiny: {', '.join(shiny)} +{add}")
     other_set = OTHER_SETS.search(title)
     if other_set:
         parts["cards"] -= OTHER_SETS_PENALTY

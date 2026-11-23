@@ -36,6 +36,24 @@ def test_price_per_card_points():
     assert "$2.00/card +12" in score.score_lot(it, info, RANKS)[1]
 
 
+def test_shiny_cards():
+    def reasons(title, **kw):
+        it, info = lot(title, **kw)
+        return score.score_lot(it, info, RANKS)[1], score.tags(it, info, score.score_lot(it, info, RANKS)[1])
+    r, t = reasons("Bowman Chrome Mojo lot of 20")
+    assert "shiny: mojo +8" in r and "Shiny" in t
+    r, _ = reasons("Bowman Chrome lot of 20 Mojo X-Fractor Shimmer Sparkle")
+    assert "shiny: x-fractor, mojo, shimmer, sparkle +15" in r
+    # from eBay's Features item specific / the description, not just the title
+    r, _ = reasons("Bowman Chrome lot of 12", details={"features": "Refractor", "lines": [], "count": 12})
+    assert "shiny: refractor +8" in r
+    r, t = reasons("Bowman Chrome base lot of 20")
+    assert not any(x.startswith("shiny") for x in r) and "Shiny" not in t
+    # a shiny lot outranks the same lot without the shiny words
+    assert score.score_lot(*lot("Jesus Made Bowman Chrome Mojo Refractor lot of 10"), RANKS)[0] > \
+        score.score_lot(*lot("Jesus Made Bowman Chrome lot of 10"), RANKS)[0]
+
+
 def test_bowman_chrome_team_lots_and_other_sets():
     def reasons(title, **kw):
         return score.score_lot(*lot(title, **kw), RANKS)[1]
