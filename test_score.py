@@ -31,7 +31,28 @@ def test_top_prospects_score_higher():
 def test_price_per_card_points():
     it, info = lot("1st Bowman lot of 50", price=20, ship=5)      # $0.50 a card
     s, reasons = score.score_lot(it, info, RANKS)
-    assert info["per_card"] == 0.5 and "$0.50/card +20" in reasons
+    assert info["per_card"] == 0.5 and "$0.50/card +3" in reasons   # very cheap: few points
+    it, info = lot("1st Bowman lot of 10", price=15, ship=5)       # $2.00 a card: the most
+    assert "$2.00/card +12" in score.score_lot(it, info, RANKS)[1]
+
+
+def test_bowman_chrome_team_lots_and_other_sets():
+    def reasons(title, **kw):
+        return score.score_lot(*lot(title, **kw), RANKS)[1]
+    assert "Bowman Chrome lot +10" in reasons("2026 Bowman Chrome Mojo lot of 20")
+    assert "Bowman Chrome lot +10" in reasons("Jesus Made BCP-12 lot of 3")
+    assert "title doesn't say Bowman -10" in reasons("Topps Chrome rookie lot of 20")
+    # one team, 10+ cards = team lot; two teams or a small lot is not
+    assert "team lot (Brewers) -15" in reasons("Brewers 94 card lot Jesus Made Yelich Bowman")
+    assert not any(r.startswith("team lot") for r in reasons("Brewers Twins Bowman lot of 20"))
+    assert not any(r.startswith("team lot") for r in reasons("Guardians Bowman Chrome 1st Auto 3-Card Lot"))
+    assert any(r.startswith("mixed with other sets (pro debut)")
+               for r in reasons("Dodgers 52 Card Lot Topps Chrome Bowman Pro Debut"))
+    # "1st Bowman" only in the description: fewer points and no prospect bonus
+    it, info = lot("Jesus Made Bowman lot of 10",
+                   details={"lines": ["includes a 1st Bowman"], "players": [], "count": 10})
+    r = score.score_lot(it, info, RANKS)[1]
+    assert "1st Bowman (description only) +8" in r and "prospect + 1st Bowman +10" not in r
 
 
 def test_first_bowman_counted_once():

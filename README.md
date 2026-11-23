@@ -17,14 +17,17 @@ It uses only eBay's official Browse API (no scraping) and plain code for scoring
 2. **Details**: for the most promising new lots, one extra call reads the item specifics and
    description: real shipping, number of cards, players named, and Sport (non-baseball lots
    are dropped).
-3. **Score** (`score.py`): prospects named (up to 50; top 100 in `prospects.yaml`, #1 = 30,
-   #50 = 15, #100 = 0.3), card types (1st Bowman 20, auto, numbered, graded, refractor... up to
-   35), +10 when a ranked prospect AND a 1st Bowman are in the same lot, price per card (up to
-   20), freshness (5). Football / basketball / other-sport lots (title words like "football",
-   "Bowman U", "NFL", team names) are skipped, or -15 if they also name one of your prospects. Also: listed over 7 days ago -10, same-card bulk ("x50 one card") -10 with
-   stricter price points, seller feedback under 50 +5, auction ending 1-6 AM Eastern with 0-2
-   bids +5, risers +8, and your own sold prices / sell-through (below). The page shows why each
-   lot got its score.
+3. **Score** (`score.py`): prospects named (up to 40; top 100 in `prospects.yaml`, #1 = 30,
+   #50 = 15, #100 = 0.3), card types (1st Bowman 20, or 8 if only the description says it;
+   auto, numbered, graded, refractor... up to 35), +10 when a ranked prospect AND a 1st Bowman
+   are in the title, title says Bowman Chrome +10 / doesn't say Bowman -10, team lot (one MLB
+   team, 10+ cards) -15, other sets in the title (Pro Debut, Heritage, Mosaic...) -10, price
+   per card (up to 12; $1-4 a card scores best, very cheap bulk only 3), freshness (5).
+   Football / basketball / other-sport lots (title words like "football", "Bowman U", "NFL",
+   team names) are skipped, or -15 if they also name one of your prospects. Also: listed over
+   7 days ago -10, same-card bulk ("x50 one card") -20 with stricter price points, seller
+   feedback under 50 +5, auction ending 1-6 AM Eastern with 0-2 bids +5, risers +8, and your
+   own sold prices / sell-through (below). The page shows why each lot got its score.
 4. **Alerts**: new lots scoring `alert_min_score` (60) or more, first seen in the last 12 hours,
    outside quiet hours (11pm-8am). The very first scan sends none.
 5. **Web page** tabs: Top lots, New (last 24 h), Auctions ending soon, $1 a card or less,

@@ -4,14 +4,23 @@ Plain code on purpose (no AI): each part adds points, and every point is explain
 on the web page so you can see WHY a lot scored what it did. Change the numbers
 here if your experience says otherwise.
 
-  Prospects named   up to 50   #1 prospect = 30, #25 = 23, #50 = 15, #100 = 0.3 (added up)
+  Prospects named   up to 40   #1 prospect = 30, #25 = 23, #50 = 15, #100 = 0.3 (added up)
   Card types        up to 35   1st Bowman 20, auto 10, numbered 6, graded 4, refractor/color 4, ...
-  Prospect 1st        +10      a prospect from your list AND a 1st Bowman in the same lot
-  Price per card    up to 20   $0.50 or less = 20, $1 = 15, $2 = 10, $3 = 6, $5 = 3
+                               (1st Bowman only in the description, not the title: 8)
+  Prospect 1st        +10      a prospect from your list AND a 1st Bowman in the title
+  Bowman Chrome       +10      the title says Bowman Chrome (or BCP / BDC card numbers)
+  Not Bowman          -10      the title doesn't say Bowman at all (mostly Topps / other sets)
+  Team lot            -15      the title names one MLB team and it's 10+ cards (mostly base
+                               cards of that team with a prospect or two mixed in)
+  Other sets          -10      the title names another set (Pro Debut, Heritage, Mosaic,
+                               Donruss, Stars of MLB...): a mixed pile, not a Bowman lot
+  Price per card    up to 12   the sweet spot is $1-4 a card: $0.50 or less = 3 (very cheap
+                               lots are mostly bulk that doesn't resell), $1 = 8, $2 = 12,
+                               $4 = 10, $7 = 6, $12 = 3
   Fresh             up to  5   Buy It Now listed in the last hour, or an auction ending
                                within the hour with no bids
   Stale               -10      Buy It Now listed over 7 days ago (still unsold: likely overpriced)
-  Same-card bulk      -10      many copies of one card (and stricter price-per-card points)
+  Same-card bulk      -20      many copies of one card (and stricter price-per-card points)
   New seller           +5      seller feedback under 50 (new sellers often underprice)
   Late-night auction   +5      ends 1-6 AM Eastern with 0-2 bids
   Your sold prices  +5 / +10   named cards' sold prices (manual_comps.csv) cover the price / 1.5x
@@ -47,12 +56,37 @@ FEATURES = [  # (name, points, pattern) - checked against the title + item speci
 # "Lot of (18) ... #BD-1"). Harder to resell than a mixed lot, so it's scored on its own.
 SAME_CARD = re.compile(r"\bsame (card|player)\b|\bidentical\b|\bcopies\b"
                        r"|\b\d{1,4}\s?x\b|\bx\s?\d{1,4}\b"       # 100x / x100
-                       r"|#?\b[a-z]{1,4}-\d{1,4}\b")              # a card number: #BD-1, BDC-12
+                       r"|#?\b[a-z]{1,4}-\d{1,4}\b"              # a card number: #BD-1, BDC-12
+                       r"|\b(bcp|bdc|bd|bp)\d{1,4}\b")            # ... or without the dash: BCP115
 SAME_CARD_MIN = 5
-SAME_CARD_PENALTY = 10
+SAME_CARD_PENALTY = 20
 
-MAX = {"prospects": 50, "cards": 35, "price": 20, "fresh": 5}
-PROSPECT_1ST = 10                      # a prospect AND a 1st Bowman in the lot: +10
+MAX = {"prospects": 40, "cards": 35, "price": 12, "fresh": 5}
+PROSPECT_1ST = 10                      # a prospect AND a 1st Bowman in the title: +10
+FIRST_BOWMAN_DESC = 8                  # "1st Bowman" only in the description / item specifics
+
+# What you said resells best: Bowman Chrome lots. Checked in the TITLE only (descriptions
+# often say "Bowman" for one card in a pile of Topps).
+BOWMAN_CHROME = re.compile(r"\bbowman\b.{0,25}\bchrome\b|\bchrome\b.{0,15}\bbowman\b"
+                           r"|\b(bcp|bdc)\b|\b(bcp|bdc)-?\d")
+ANY_BOWMAN = re.compile(r"\bbowman\b|\b(bcp|bdc|bd|bp)-?\d|\b(bcp|bdc)\b")
+BOWMAN_CHROME_POINTS, NOT_BOWMAN_PENALTY = 10, 10
+
+# Team lots ("Brewers 94 Card Lot ... Yelich"): mostly that team's base cards. Only when ONE
+# team is named (two or more teams = a mixed prospect lot) and the lot has 10+ cards
+# (a small team lot like "Guardians Bowman Chrome 1st Auto 3-Card Lot" is fine).
+MLB_TEAMS = re.compile(
+    r"\b(yankees|red sox|blue jays|orioles|rays|white sox|guardians|indians|tigers|royals|"
+    r"twins|astros|angels|athletics|mariners|rangers|braves|marlins|mets|phillies|nationals|"
+    r"cubs|reds|brewers|pirates|cardinals|diamondbacks|d-?backs|rockies|dodgers|giants|padres)\b")
+TEAM_LOT_MIN, TEAM_LOT_PENALTY = 10, 15
+
+# Other sets in the title ("Bowman Chrome/Mosaic", "Pro Debut Heritage"): a mixed pile, not
+# a Bowman lot. (Topps Chrome and Finest aren't here: you rated lots with those Good.)
+OTHER_SETS = re.compile(
+    r"\b(pro debut|heritage|update|mosaic|donruss|optic|prizm|panini|stars of mlb|"
+    r"stadium club|ginter|archives|big league|opening day|gypsy queen|series [12]|score)\b")
+OTHER_SETS_PENALTY = 10
 STALE_DAYS, STALE_PENALTY = 7, 10      # Buy It Now listed over 7 days ago: -10
 NEW_SELLER = 50                        # seller feedback under this: +5 (often underprice)
 RISER_POINTS = 8                       # each player from risers.yaml in the lot: +8
@@ -190,11 +224,33 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
             found.add(name)
             pts += add
             reasons.append(f"{name} +{add}")
+    # "1st Bowman" only in the description: maybe one card out of the whole lot.
+    title = norm(it["title"])
+    first_in_title = bool(re.search(FEATURES[0][2], title))
+    if "1st Bowman" in found and not first_in_title:
+        pts -= FEATURES[0][1] - FIRST_BOWMAN_DESC
+        reasons[reasons.index(f"1st Bowman +{FEATURES[0][1]}")] = \
+            f"1st Bowman (description only) +{FIRST_BOWMAN_DESC}"
     parts["cards"] = min(pts, MAX["cards"])
     # The cards worth the most: a 1st Bowman of a ranked prospect.
-    if "1st Bowman" in found and any(p in ranks for p in info["players"]):
+    if first_in_title and any(p in ranks for p in info["players"]):
         parts["cards"] += PROSPECT_1ST
         reasons.append(f"prospect + 1st Bowman +{PROSPECT_1ST}")
+    # Bowman Chrome lots resell best; lots that don't say Bowman are mostly other sets.
+    if BOWMAN_CHROME.search(title):
+        parts["cards"] += BOWMAN_CHROME_POINTS
+        reasons.append(f"Bowman Chrome lot +{BOWMAN_CHROME_POINTS}")
+    elif not ANY_BOWMAN.search(title):
+        parts["cards"] -= NOT_BOWMAN_PENALTY
+        reasons.append(f"title doesn't say Bowman -{NOT_BOWMAN_PENALTY}")
+    other_set = OTHER_SETS.search(title)
+    if other_set:
+        parts["cards"] -= OTHER_SETS_PENALTY
+        reasons.append(f"mixed with other sets ({other_set.group(0)}) -{OTHER_SETS_PENALTY}")
+    teams = set(m.group(0) for m in MLB_TEAMS.finditer(title))
+    if len(teams) == 1 and (info["count"] or 0) >= TEAM_LOT_MIN:
+        parts["cards"] -= TEAM_LOT_PENALTY
+        reasons.append(f"team lot ({teams.pop().title()}) -{TEAM_LOT_PENALTY}")
 
     # 3. Price per card (price + shipping, divided by the number of cards).
     per = info["per_card"]
@@ -209,8 +265,9 @@ def score_lot(it, info, ranks, tz="America/New_York", market=None, risers=None):
         reasons.append(f"${per:.2f}/card +{add}")
         reasons.append(f"same-card bulk ({info['count']} copies) -{SAME_CARD_PENALTY}")
     else:
-        add = 20 if per <= 0.5 else 15 if per <= 1 else 10 if per <= 2 else 6 if per <= 3 \
-            else 3 if per <= 5 else 0
+        # Not "cheaper is better": very cheap lots are mostly bulk base cards.
+        add = 3 if per <= 0.5 else 8 if per <= 1 else 12 if per <= 2 else 10 if per <= 4 \
+            else 6 if per <= 7 else 3 if per <= 12 else 0
         parts["price"] = add
         reasons.append(f"${per:.2f}/card +{add}")
 
