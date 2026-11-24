@@ -16,7 +16,7 @@ spotter:
   detail_lookups_per_run: 10 # new lots per run whose item specifics + description we fetch
                              # (1 call each, best-looking first): real shipping, Sport, players
   bin_show_hours: 3          # a Buy It Now lot stays on the page this long after a search last saw it
-  max_age_hours: 36          # ...and leaves the page this long after it was LISTED, to keep the page
+  max_age_hours: 24          # ...and leaves the page this long after it was LISTED, to keep the page
                              # fresh (auctions stay until they end; they're only shown in their last hours)
   page_min_score: 20         # lots scoring less than this don't go on the page
   max_per_tab: 60            # at most this many lots per page tab
